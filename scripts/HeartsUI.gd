@@ -3,8 +3,8 @@
 class_name HeartsUI
 extends Control
 
-const HEART_SIZE := 48  # doble del tamaño anterior
-const SPACING := 8
+const HEART_SIZE := 24  # compacto, esquina superior derecha
+const SPACING := 4
 const N_FRAMES := 5
 const ANIM_FPS := 6.0  # corazón late ~1.2 veces por segundo (5 frames a 6fps)
 

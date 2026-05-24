@@ -258,14 +258,16 @@ func _ready() -> void:
 		var hearts_script = load("res://scripts/HeartsUI.gd")
 		var hearts = hearts_script.new()
 		hearts.name = "HeartsUI"
-		# Esquina inferior izquierda — anchors a bottom-left + offsets negativos
+		# Esquina superior derecha — pequeños, encima del minimapa
 		var vp: Vector2 = get_viewport_rect().size
-		var total_w: float = 10 * 56.0  # 48 heart + 8 spacing
-		var bar_h: float = 48.0
-		hearts.set("offset_left", 8.0)
-		hearts.set("offset_top", vp.y - bar_h - 8.0)
-		hearts.set("offset_right", 8.0 + total_w)
-		hearts.set("offset_bottom", vp.y - 8.0)
+		var heart_w: float = 24.0
+		var heart_spacing: float = 4.0
+		var total_w: float = 10 * (heart_w + heart_spacing)
+		var bar_h: float = 24.0
+		hearts.set("offset_left", vp.x - total_w - 12.0)
+		hearts.set("offset_top", 12.0)
+		hearts.set("offset_right", vp.x - 12.0)
+		hearts.set("offset_bottom", 12.0 + bar_h)
 		hud.add_child(hearts)
 		# Conecta señal HP del player
 		if player.has_signal("hp_changed"):
