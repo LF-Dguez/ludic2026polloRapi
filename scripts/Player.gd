@@ -14,11 +14,13 @@ const HALF_HITBOX := 6
 
 const FRAME_W := 48
 const FRAME_H := 64
-const ANIM_FPS := 8.0
+const ANIM_FPS := 10.0  # antes 8 — 10 fps feels más natural para walk a SPEED 240
 const ANIMS := ["walk_down", "walk_left", "walk_right", "walk_up"]
 
 var sprite: AnimatedSprite2D
+var outline_sprite: AnimatedSprite2D
 var current_anim: String = "walk_down"
+var was_moving: bool = false
 
 var overworld_layer: TileMapLayer
 var overworld_decor_layer: TileMapLayer
@@ -58,28 +60,32 @@ func _ready() -> void:
 			var at := AtlasTexture.new()
 			at.atlas = tex
 			at.region = Rect2(col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H)
+			at.filter_clip = false
 			sf.add_frame(anim_name, at)
 
-	# Outline sprite (silhouette) detrás
-	var outline := AnimatedSprite2D.new()
-	outline.sprite_frames = sf
-	outline.centered = true
-	outline.animation = current_anim
-	outline.scale = Vector2(1.08, 1.08)
-	outline.modulate = Color(0, 0, 0, 0.5)
-	outline.z_index = -1
-	outline.name = "Outline"
-	add_child(outline)
-	outline.play()
+	# Outline sprite (silhouette) detrás — NEAREST filter para pixel-art crisp
+	outline_sprite = AnimatedSprite2D.new()
+	outline_sprite.sprite_frames = sf
+	outline_sprite.centered = true
+	outline_sprite.animation = current_anim
+	outline_sprite.scale = Vector2(1.08, 1.08)
+	outline_sprite.modulate = Color(0, 0, 0, 0.5)
+	outline_sprite.z_index = -1
+	outline_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	outline_sprite.name = "Outline"
+	add_child(outline_sprite)
 
 	# Sprite principal animado encima
 	sprite = AnimatedSprite2D.new()
 	sprite.sprite_frames = sf
 	sprite.centered = true
 	sprite.animation = current_anim
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	sprite.name = "MainSprite"
 	add_child(sprite)
-	sprite.play()
+	# Inicia idle (frame 0, sin play)
+	sprite.frame = 0
+	outline_sprite.frame = 0
 
 
 func set_mode(new_mode: int) -> void:
@@ -101,34 +107,54 @@ func _process(delta: float) -> void:
 	if Input.is_key_pressed(KEY_S): dir.y += 1
 	if Input.is_key_pressed(KEY_A): dir.x -= 1
 	if Input.is_key_pressed(KEY_D): dir.x += 1
+
 	if dir == Vector2.ZERO:
-		# Idle: detener animación en frame 0 (mantiene última dirección)
-		if sprite != null and sprite.is_playing():
+		# Idle — stop + frame 0 (pose neutra)
+		if sprite != null and was_moving:
 			sprite.stop()
 			sprite.frame = 0
-			var outline := get_node_or_null("Outline") as AnimatedSprite2D
-			if outline != null:
-				outline.stop()
-				outline.frame = 0
+			if outline_sprite != null:
+				outline_sprite.stop()
+				outline_sprite.frame = 0
+			was_moving = false
 		return
-	# Update dirección animada según eje dominante
+
+	# Eje dominante → animación de dirección
 	var new_anim: String = current_anim
 	if absf(dir.x) > absf(dir.y):
 		new_anim = "walk_right" if dir.x > 0 else "walk_left"
 	else:
 		new_anim = "walk_down" if dir.y > 0 else "walk_up"
+
 	if sprite != null:
+		# Cambio de dirección: PRESERVA frame_progress para walk cycle continuo
+		# (no resetea a 0 — feel más natural al girar mientras camina)
 		if new_anim != current_anim:
+			var keep_frame: int = sprite.frame
+			var keep_progress: float = sprite.frame_progress
+			# Si venía de idle (frame 0) → arranca en frame 1 para evitar pose neutra
+			if not was_moving:
+				keep_frame = 1
+				keep_progress = 0.0
 			current_anim = new_anim
 			sprite.animation = new_anim
-			var outline2 := get_node_or_null("Outline") as AnimatedSprite2D
-			if outline2 != null:
-				outline2.animation = new_anim
-		if not sprite.is_playing():
+			sprite.frame = keep_frame
+			sprite.frame_progress = keep_progress
+			if outline_sprite != null:
+				outline_sprite.animation = new_anim
+				outline_sprite.frame = keep_frame
+				outline_sprite.frame_progress = keep_progress
+		# Empezando a moverse desde idle: skip frame 0 (idle pose)
+		if not was_moving:
+			if sprite.frame == 0:
+				sprite.frame = 1
+				if outline_sprite != null:
+					outline_sprite.frame = 1
 			sprite.play()
-			var outline3 := get_node_or_null("Outline") as AnimatedSprite2D
-			if outline3 != null:
-				outline3.play()
+			if outline_sprite != null:
+				outline_sprite.play()
+			was_moving = true
+
 	dir = dir.normalized()
 	var step := dir * SPEED * delta
 	# SUBSTEPPING: si step > HALF_HITBOX, dividir en chunks para evitar tunneling a low FPS
@@ -143,6 +169,9 @@ func _process(delta: float) -> void:
 		var ny := position + Vector2(0, sub_step.y)
 		if _can_stand_at(ny):
 			position.y = ny.y
+	# Y-sort dinámico: player z basado en su Y para mezclarse con trees
+	# (trees usan z_index = tile.y; player usa Y/32 + 0.5 para quedar entre tiles)
+	z_index = int(position.y / float(EFFECTIVE_TILE))
 
 
 func _can_stand_at(pos: Vector2) -> bool:
