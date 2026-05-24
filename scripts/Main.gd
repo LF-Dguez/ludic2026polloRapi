@@ -137,6 +137,7 @@ var _xp_bar = null
 var _level_popup = null
 var _achievements = null
 var _weapon_label_ref: Label = null
+var _fog: CanvasLayer = null
 
 
 func _weapon_label_update(wid: String) -> void:
@@ -182,8 +183,16 @@ func _ready() -> void:
 	_enemies_container.name = "EnemiesContainer"
 	_enemies_container.z_index = 8
 	add_child(_enemies_container)
-	# HeartsUI — 10 corazones top-left HUD
+	# HUD por encima de la niebla (layer 10), niebla en layer 2
 	var hud := get_node("HUD") as CanvasLayer
+	if hud != null:
+		hud.layer = 10
+	# FogOverlay — niebla atmosférica
+	var fog_script = load("res://scripts/FogOverlay.gd")
+	_fog = fog_script.new()
+	_fog.name = "FogOverlay"
+	add_child(_fog)
+	# (continúa setup HUD)
 	if hud != null:
 		# HotbarUI — al lado de los corazones (bottom-left + offset right)
 		var hb_script = load("res://scripts/HotbarUI.gd")
@@ -471,6 +480,8 @@ func _regenerate_overworld() -> void:
 	player_light.color = Color(1.0, 0.85, 0.55)
 	player_light.energy = 1.0
 	player_light.texture_scale = 2.5
+	if _fog != null and _fog.has_method("set_intensity"):
+		_fog.set_intensity(0)
 	player.passable_decor = {}  # overworld no usa el dict
 	player.set_mode(Mode.OVERWORLD)
 
@@ -608,10 +619,14 @@ func _enter_paquime_dungeon(poi) -> void:
 	cave_layer.visible = false
 	mines_layer.visible = false
 	dark_bg.visible = true  # fondo oscuro fuera de la dungeon (era gris Godot default)
-	canvas_modulate.color = Color(0.65, 0.60, 0.55, 1)
+	# PENUMBRA cálida + linterna íntima
+	canvas_modulate.color = Color(0.07, 0.06, 0.05, 1)
 	player_light.enabled = true
-	player_light.color = Color(1.0, 0.85, 0.55)
-	player_light.texture_scale = 4.0
+	player_light.color = Color(1.0, 0.78, 0.45)
+	player_light.energy = 1.2
+	player_light.texture_scale = 2.4
+	if _fog != null and _fog.has_method("set_intensity"):
+		_fog.set_intensity(1)
 	minimap.visible = false
 	minimap_hint.visible = false
 	player.set_mode(Mode.DUNGEON_PAQUIME)
@@ -688,10 +703,14 @@ func _enter_cave_dungeon(poi) -> void:
 	cave_layer.visible = true
 	mines_layer.visible = false
 	dark_bg.visible = true
-	canvas_modulate.color = Color(0.20, 0.22, 0.30, 1)
+	# PENUMBRA cueva — casi negro azulado
+	canvas_modulate.color = Color(0.05, 0.06, 0.10, 1)
 	player_light.enabled = true
 	player_light.color = Color(1.0, 0.92, 0.75)
-	player_light.texture_scale = 3.5
+	player_light.energy = 1.1
+	player_light.texture_scale = 2.2
+	if _fog != null and _fog.has_method("set_intensity"):
+		_fog.set_intensity(2)
 	minimap.visible = false
 	minimap_hint.visible = false
 	player.set_mode(Mode.CAVE_TARAHUMARA)
@@ -753,10 +772,14 @@ func _enter_mine_dungeon(poi) -> void:
 	cave_layer.visible = false
 	mines_layer.visible = true
 	dark_bg.visible = true
-	canvas_modulate.color = Color(0.18, 0.18, 0.25, 1)
+	# PENUMBRA mina — casi negro frío con tinte morado
+	canvas_modulate.color = Color(0.04, 0.05, 0.10, 1)
 	player_light.enabled = true
 	player_light.color = Color(1.0, 0.78, 0.45)
-	player_light.texture_scale = 4.0
+	player_light.energy = 1.2
+	player_light.texture_scale = 2.5
+	if _fog != null and _fog.has_method("set_intensity"):
+		_fog.set_intensity(3)
 	minimap.visible = false
 	minimap_hint.visible = false
 	player.set_mode(Mode.MINE_NAICA)
@@ -837,6 +860,8 @@ func _exit_to_overworld() -> void:
 	player_light.color = Color(1.0, 0.85, 0.55)
 	player_light.energy = 1.0
 	player_light.texture_scale = 2.5
+	if _fog != null and _fog.has_method("set_intensity"):
+		_fog.set_intensity(0)
 	player.passable_decor = {}
 	minimap.visible = true
 	minimap_hint.visible = true
