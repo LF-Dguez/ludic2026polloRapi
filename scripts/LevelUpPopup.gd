@@ -45,5 +45,7 @@ func show_level(new_level: int, bonus_text: String) -> void:
 	tw.tween_interval(2.0)
 	tw.tween_property(self, "modulate:a", 0.0, 0.5)
 	await tw.finished
+	if not is_instance_valid(self):
+		return
 	visible = false
 	modulate.a = 1.0

@@ -62,8 +62,8 @@ func take_damage(amount: int) -> void:
 		tw.tween_property(sprite, "modulate", Color.WHITE, 0.3)
 	if hp <= 0:
 		_drop_loot()
-		# Notificar al player para XP
-		if _player != null and _player.has_signal("enemy_killed"):
+		# Notificar al player para XP — guard contra player freed
+		if is_instance_valid(_player) and _player.has_signal("enemy_killed"):
 			var xp_val: int = 10 if enemy_type == "bandido" else 15
 			_player.enemy_killed.emit(enemy_type, xp_val)
 		queue_free()

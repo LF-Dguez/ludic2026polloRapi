@@ -82,8 +82,12 @@ func show_victory(boss_name: String, xp_reward: int, drops: Array) -> void:
 	add_child(drop_lbl)
 	# Auto-fade after 4 seconds
 	await get_tree().create_timer(4.0).timeout
+	if not is_instance_valid(self):
+		return
 	var tw := create_tween()
 	tw.tween_property(self, "modulate:a", 0.0, 0.6)
 	await tw.finished
+	if not is_instance_valid(self):
+		return
 	visible = false
 	modulate.a = 1.0

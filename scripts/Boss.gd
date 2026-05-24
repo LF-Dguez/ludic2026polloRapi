@@ -6,8 +6,8 @@ extends CharacterBody2D
 
 const ItemDBScript = preload("res://scripts/ItemDB.gd")
 
-signal hp_changed(current: int, max_hp: int, name: String)
-signal boss_died(boss_id: String, position: Vector2, drops: Array)
+signal hp_changed(current: int, max_hp: int, boss_name: String)
+signal boss_died(boss_id: String, pos: Vector2, drops: Array)
 
 # ─── Boss configs por mazmorra ──────────────────────────────────────────
 const BOSSES := {
@@ -280,9 +280,6 @@ func _ai_priest(delta: float) -> void:
 				if _summon_cd <= 0.0:
 					_summon_minion("bandido")
 					_summon_cd = 12.0
-	# Contact damage si player muy cerca
-	if dist < 38.0 and _attack_cd > rate_safe(cfg["attack_cooldown"]) - 0.1:
-		pass
 
 
 # ─── BEHAVIOR: charger (Bestia) ──────────────────────────────────────────

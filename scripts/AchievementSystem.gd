@@ -84,7 +84,8 @@ func _show_popup(id: String) -> void:
 	tw.tween_interval(3.0)
 	tw.tween_property(panel, "modulate:a", 0.0, 0.5)
 	await tw.finished
-	panel.queue_free()
+	if is_instance_valid(panel):
+		panel.queue_free()
 
 
 func get_state() -> Dictionary:

@@ -136,6 +136,14 @@ var _victory_screen = null
 var _xp_bar = null
 var _level_popup = null
 var _achievements = null
+var _weapon_label_ref: Label = null
+
+
+func _weapon_label_update(wid: String) -> void:
+	if _weapon_label_ref == null:
+		return
+	var def: Dictionary = Player.WEAPONS.get(wid, {})
+	_weapon_label_ref.text = "[Tab] Arma: %s" % def.get("name", wid)
 
 
 func _ready() -> void:
@@ -203,11 +211,10 @@ func _ready() -> void:
 		weapon_lbl.set("offset_right", 8.0 + 10 * 56.0 + 24.0 + 240.0)
 		weapon_lbl.set("offset_bottom", vp_hb.y - 80.0)
 		hud.add_child(weapon_lbl)
-		if player.has_signal("weapon_changed"):
-			player.weapon_changed.connect(func(wid):
-				var def = Player.WEAPONS.get(wid, {})
-				weapon_lbl.text = "[Tab] Arma: %s" % def.get("name", wid)
-			)
+		if player.has_signal("weapon_changed") and not player.weapon_changed.is_connected(_weapon_label_update):
+			# Guarda label via closure
+			_weapon_label_ref = weapon_lbl
+			player.weapon_changed.connect(_weapon_label_update)
 		weapon_lbl.text = "[Tab] Arma: Machete"
 		# PauseMenu
 		var pm_script = load("res://scripts/PauseMenu.gd")
@@ -1092,9 +1099,9 @@ func _spawn_boss(boss_id: String, tile: Vector2i, layer: TileMapLayer, mode_int:
 		_boss_bar.show_boss(BossScript.BOSSES[boss_id]["name"], boss.hp, boss.max_hp)
 
 
-func _on_boss_hp_changed(cur: int, max_hp: int, name: String) -> void:
+func _on_boss_hp_changed(cur: int, max_hp: int, boss_name: String) -> void:
 	if _boss_bar != null:
-		_boss_bar.update_hp(cur, max_hp, name)
+		_boss_bar.update_hp(cur, max_hp, boss_name)
 
 
 func _on_boss_died(boss_id: String, pos: Vector2, drops: Array) -> void:
@@ -1302,7 +1309,7 @@ func _save_game() -> void:
 	var data := {
 		"seed": current_seed,
 		"hp": player.current_hp if "current_hp" in player else 10,
-		"max_hp": player.MAX_HP if "MAX_HP" in player else 10,
+		"max_hp": player.get_max_hp() if player.has_method("get_max_hp") else 10,
 		"tile_pos": player.get_current_tile() if mode == Mode.OVERWORLD else _find_first_poi(OverworldScript.POIType.MATA_ORTIZ),
 		"cleared": cleared_dungeons,
 		"kills": stats_kills,
@@ -1393,8 +1400,8 @@ func _on_new_game_requested() -> void:
 			player.inventory.from_array([])
 			player.inventory.add("tortilla", 3)
 			player.inventory.add("machete", 1)
-	if player.has_method("reset_hp"):
-		player.reset_hp()
+		if player.has_method("reset_hp"):
+			player.reset_hp()
 	_regenerate_overworld()
 
 

@@ -14,6 +14,7 @@ var radius: int = 16
 
 var _life: float = 0.0
 var _sprite: Sprite2D = null
+var _consumed: bool = false  # guard contra doble hit (body_entered + manual)
 
 
 func _ready() -> void:
@@ -52,6 +53,8 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if _consumed:
+		return
 	_life += delta
 	if _life > MAX_LIFE:
 		queue_free()
@@ -60,13 +63,17 @@ func _physics_process(delta: float) -> void:
 	# Manual collision: distancia con player
 	var p := get_tree().get_first_node_in_group("player")
 	if p != null and global_position.distance_to(p.global_position) < float(radius) + 10.0:
+		_consumed = true
 		if p.has_method("take_damage"):
 			p.take_damage(damage)
 		queue_free()
 
 
 func _on_body_entered(body: Node) -> void:
+	if _consumed:
+		return
 	if body.is_in_group("player"):
+		_consumed = true
 		if body.has_method("take_damage"):
 			body.take_damage(damage)
 		queue_free()

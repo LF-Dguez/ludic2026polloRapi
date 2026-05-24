@@ -19,30 +19,27 @@ func _ready() -> void:
 	var bar_h: float = 22.0
 	var bar_x: float = (vp.x - bar_w) / 2.0
 	var bar_y: float = 28.0
-	# Background bar
-	_bg = ColorRect.new()
-	_bg.color = Color(0.05, 0.02, 0.02, 0.85)
-	_bg.position = Vector2(bar_x, bar_y)
-	_bg.size = Vector2(bar_w, bar_h)
-	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_bg)
-	# Borde
+	# Borde (primero, queda atrás)
 	var border := ColorRect.new()
 	border.color = Color(0.85, 0.20, 0.20, 0.95)
 	border.position = Vector2(bar_x - 2, bar_y - 2)
 	border.size = Vector2(bar_w + 4, bar_h + 4)
 	border.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(border)
-	border.move_to_front()
-	_bg.move_to_front()
-	# Fill
+	# Background bar (encima del borde)
+	_bg = ColorRect.new()
+	_bg.color = Color(0.05, 0.02, 0.02, 0.85)
+	_bg.position = Vector2(bar_x, bar_y)
+	_bg.size = Vector2(bar_w, bar_h)
+	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_bg)
+	# Fill (encima del bg)
 	_fill = ColorRect.new()
 	_fill.color = Color(0.85, 0.20, 0.20, 0.95)
 	_fill.position = Vector2(bar_x + 2, bar_y + 2)
 	_fill.size = Vector2(bar_w - 4, bar_h - 4)
 	_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_fill)
-	_fill.move_to_front()
 	# Label
 	_label = Label.new()
 	_label.add_theme_font_size_override("font_size", 18)
