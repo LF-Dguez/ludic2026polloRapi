@@ -1195,6 +1195,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F12:
 				if mode == Mode.OVERWORLD:
 					_auto_tour()
+			KEY_F10:
+				# DEBUG: forzar muerte del player para verificar GameOverScreen
+				if player != null and player.has_method("take_damage"):
+					player.take_damage(999)
  
  
 func _handle_interact() -> void:

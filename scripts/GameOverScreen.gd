@@ -40,15 +40,29 @@ func _ready() -> void:
 			_frames.append(at)
 
 	# TextureRect para mostrar el frame actual — GRANDE en el centro
+	# Source es 64x64 → display 640x640 (10x scale) preservando aspect cuadrado
 	_gameover_rect = TextureRect.new()
 	if _frames.size() > 0:
 		_gameover_rect.texture = _frames[0]
 	_gameover_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_gameover_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	_gameover_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_gameover_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_gameover_rect.custom_minimum_size = Vector2(512, 256)  # 8x el size original
-	_gameover_rect.size = Vector2(512, 256)
+	_gameover_rect.custom_minimum_size = Vector2(640, 320)
+	_gameover_rect.size = Vector2(640, 320)
 	add_child(_gameover_rect)
+	# Fallback de texto por si el atlas no cargó
+	if _frames.is_empty():
+		var fallback := Label.new()
+		fallback.text = "GAME OVER"
+		fallback.add_theme_font_size_override("font_size", 96)
+		fallback.add_theme_color_override("font_color", Color(0.95, 0.20, 0.20))
+		fallback.add_theme_color_override("font_shadow_color", Color(0, 0, 0))
+		fallback.add_theme_constant_override("shadow_offset_x", 4)
+		fallback.add_theme_constant_override("shadow_offset_y", 4)
+		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		fallback.position = Vector2(0, 80)
+		fallback.size = Vector2(get_viewport_rect().size.x, 120)
+		add_child(fallback)
 
 	# Stats label (debajo)
 	_stats_label = Label.new()
