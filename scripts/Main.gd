@@ -139,6 +139,13 @@ var _achievements = null
 var _weapon_label_ref: Label = null
 var _fog: CanvasLayer = null
 
+# ─── Random overworld enemy spawning ─────────────────────────────────
+const OVERWORLD_ENEMY_CAP := 14
+const OVERWORLD_SPAWN_MIN_DIST := 220.0  # no spawn pegado al player
+const OVERWORLD_SPAWN_MAX_DIST := 480.0  # no spawn fuera de pantalla lejos
+const OVERWORLD_DESPAWN_DIST := 950.0
+var _overworld_spawn_cd: float = 3.0
+
 
 func _weapon_label_update(wid: String) -> void:
 	if _weapon_label_ref == null:
@@ -906,8 +913,63 @@ func _update_hud(t_gen: int, t_paint: int) -> void:
 func _process(delta: float) -> void:
 	_update_prompt()
 	_check_cementerio_spawns()
+	_check_overworld_random_spawns(delta)
 	_update_camera_shake(delta)
 	_check_achievements()
+
+
+# ─── Random overworld enemy spawn ────────────────────────────────────
+func _check_overworld_random_spawns(delta: float) -> void:
+	if mode != Mode.OVERWORLD or world == null or player == null:
+		return
+	_overworld_spawn_cd -= delta
+	# Despawn enemigos lejanos (libera memoria + count)
+	_despawn_far_overworld_enemies()
+	if _overworld_spawn_cd > 0.0:
+		return
+	_overworld_spawn_cd = randf_range(4.5, 8.5)
+	# Conteo de enemies non-boss
+	var count: int = 0
+	for c in _enemies_container.get_children():
+		if c.is_in_group("enemigo") and not c.is_in_group("boss"):
+			count += 1
+	if count >= OVERWORLD_ENEMY_CAP:
+		return
+	# Random angle + dist alrededor del player
+	var attempts: int = 0
+	while attempts < 10:
+		attempts += 1
+		var angle: float = randf() * TAU
+		var dist: float = randf_range(OVERWORLD_SPAWN_MIN_DIST, OVERWORLD_SPAWN_MAX_DIST)
+		var spawn_world: Vector2 = player.position + Vector2(cos(angle), sin(angle)) * dist
+		var tx: int = int(spawn_world.x / float(TILE_DISPLAY))
+		var ty: int = int(spawn_world.y / float(TILE_DISPLAY))
+		if not world.in_bounds(tx, ty):
+			continue
+		var b: int = world.get_biome(tx, ty)
+		# Skip biomas impasables
+		if b == OverworldScript.Biome.RIO: continue
+		if b == OverworldScript.Biome.BARRANCA: continue
+		if b == OverworldScript.Biome.PICO: continue
+		# 65% bandido, 35% fantasma (bandidos más comunes de día/desierto)
+		if randf() < 0.65 and _bandido_frames != null:
+			EnemySpawnerScript.spawn_bandido(_enemies_container, spawn_world, _bandido_frames, overworld_layer, 0)
+		elif _fantasma_frames != null:
+			EnemySpawnerScript.spawn_fantasma(_enemies_container, spawn_world, _fantasma_frames, overworld_layer, 0)
+		return  # spawn exitoso
+
+
+func _despawn_far_overworld_enemies() -> void:
+	if player == null:
+		return
+	var pp: Vector2 = player.position
+	for c in _enemies_container.get_children():
+		if not c.is_in_group("enemigo"):
+			continue
+		if c.is_in_group("boss"):
+			continue
+		if pp.distance_to(c.global_position) > OVERWORLD_DESPAWN_DIST:
+			c.queue_free()
 
 
 # ─── Camera shake ────────────────────────────────────────────────────
