@@ -114,16 +114,16 @@ func generate(w: int, h: int, seed_value: int) -> Cave:
 	cave.exit_pos = Vector2i(sec_cx, sec_cy)
 	# Force 5x5 clear alrededor de spawn y exit (antes 3x3 — más robust contra
 	# perlin chamber irregularities + min-distance hitbox del player).
-	for dy in range(-2, 3):
-		for dx in range(-2, 3):
-			var sx: int = cave.spawn.x + dx
-			var sy: int = cave.spawn.y + dy
+	for cdy in range(-2, 3):
+		for cdx in range(-2, 3):
+			var sx: int = cave.spawn.x + cdx
+			var sy: int = cave.spawn.y + cdy
 			if sx > 0 and sx < w - 1 and sy > 0 and sy < h - 1:
 				cave.set_wall(sx, sy, 0)
-			var ex: int = cave.exit_pos.x + dx
-			var ey: int = cave.exit_pos.y + dy
-			if ex > 0 and ex < w - 1 and ey > 0 and ey < h - 1:
-				cave.set_wall(ex, ey, 0)
+			var exit_x: int = cave.exit_pos.x + cdx
+			var exit_y: int = cave.exit_pos.y + cdy
+			if exit_x > 0 and exit_x < w - 1 and exit_y > 0 and exit_y < h - 1:
+				cave.set_wall(exit_x, exit_y, 0)
 
 	# === DECORACIONES de piso (rocas, charcos) ===
 	# Floor cells dispersos: poner una "isolated rock" del atlas (row 7) sobre piso
