@@ -342,19 +342,41 @@ func _ready() -> void:
 	player.mines_layer = mines_layer
 	# (Player ya no usa estos arrays — collision via _is_impassable_overworld_explicit
 	# y whitelist hardcoded por mode. Constants quedan acá como documentación.)
-	# Intenta cargar save antes de generar
-	var loaded = SaveManagerScript.load_from_disk()
-	if loaded != null:
-		_pending_load = loaded
-		_loaded_from_save = true
-		cleared_dungeons = loaded.get("cleared", [])
-		stats_kills = loaded.get("kills", 0)
-		stats_runs = loaded.get("runs", 0)
-		inventory = loaded.get("inventory", [])
-		print("[Save] Cargado save: seed=%d cleared=%d kills=%d runs=%d" % [
-			loaded.get("seed", 0), cleared_dungeons.size(), stats_kills, stats_runs
-		])
 	randomize()
+	# Pantalla de título primero — esperar input del jugador
+	var ts_script = load("res://scripts/TitleScreen.gd")
+	var title = ts_script.new()
+	title.name = "TitleScreen"
+	add_child(title)
+	var choice: String = "new"
+	var done := false
+	title.start_pressed.connect(func():
+		choice = "new"
+		done = true
+	)
+	title.load_pressed.connect(func():
+		choice = "load"
+		done = true
+	)
+	title.quit_pressed.connect(func():
+		get_tree().quit()
+	)
+	while not done:
+		await get_tree().process_frame
+	title.dismiss()
+	# Si eligió cargar, intentar leer save
+	if choice == "load":
+		var loaded = SaveManagerScript.load_from_disk()
+		if loaded != null:
+			_pending_load = loaded
+			_loaded_from_save = true
+			cleared_dungeons = loaded.get("cleared", [])
+			stats_kills = loaded.get("kills", 0)
+			stats_runs = loaded.get("runs", 0)
+			inventory = loaded.get("inventory", [])
+			print("[Save] Cargado save: seed=%d cleared=%d kills=%d runs=%d" % [
+				loaded.get("seed", 0), cleared_dungeons.size(), stats_kills, stats_runs
+			])
 	await _regenerate_overworld()
 	# Auto-tour solo se activa con F12 (QA screenshots), no automático al iniciar
 
