@@ -138,6 +138,9 @@ var _level_popup = null
 var _achievements = null
 var _weapon_label_ref: Label = null
 var _fog: CanvasLayer = null
+# Title screen state (instance vars porque lambdas no capturan locales por ref)
+var _title_choice: String = "new"
+var _title_done: bool = false
 
 # ─── Random overworld enemy spawning ─────────────────────────────────
 const OVERWORLD_ENEMY_CAP := 14
@@ -145,6 +148,20 @@ const OVERWORLD_SPAWN_MIN_DIST := 220.0  # no spawn pegado al player
 const OVERWORLD_SPAWN_MAX_DIST := 480.0  # no spawn fuera de pantalla lejos
 const OVERWORLD_DESPAWN_DIST := 950.0
 var _overworld_spawn_cd: float = 3.0
+
+
+func _on_title_start() -> void:
+	_title_choice = "new"
+	_title_done = true
+
+
+func _on_title_load() -> void:
+	_title_choice = "load"
+	_title_done = true
+
+
+func _on_title_quit() -> void:
+	get_tree().quit()
 
 
 func _weapon_label_update(wid: String) -> void:
@@ -348,24 +365,16 @@ func _ready() -> void:
 	var title = ts_script.new()
 	title.name = "TitleScreen"
 	add_child(title)
-	var choice: String = "new"
-	var done := false
-	title.start_pressed.connect(func():
-		choice = "new"
-		done = true
-	)
-	title.load_pressed.connect(func():
-		choice = "load"
-		done = true
-	)
-	title.quit_pressed.connect(func():
-		get_tree().quit()
-	)
-	while not done:
+	_title_choice = "new"
+	_title_done = false
+	title.start_pressed.connect(_on_title_start)
+	title.load_pressed.connect(_on_title_load)
+	title.quit_pressed.connect(_on_title_quit)
+	while not _title_done:
 		await get_tree().process_frame
 	title.dismiss()
 	# Si eligió cargar, intentar leer save
-	if choice == "load":
+	if _title_choice == "load":
 		var loaded = SaveManagerScript.load_from_disk()
 		if loaded != null:
 			_pending_load = loaded
