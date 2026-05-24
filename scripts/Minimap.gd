@@ -43,6 +43,8 @@ var tile_display: int = 32
 
 var hover_poi = null
 var tooltip_label: Label = null
+# Cache para limitar redraws — solo cuando player se mueve a otro pixel del minimap
+var _last_player_minimap_pos: Vector2 = Vector2(-9999, -9999)
 
 
 func _ready() -> void:
@@ -73,6 +75,10 @@ func _ready() -> void:
 
 func render(w) -> void:
 	world = w
+	# Limpiar hover de mundo previo
+	hover_poi = null
+	if tooltip_label != null:
+		tooltip_label.visible = false
 	if w == null:
 		return
 	var img := Image.create(w.width, w.height, false, Image.FORMAT_RGBA8)
@@ -88,8 +94,16 @@ func _process(_d: float) -> void:
 	if not visible:
 		return
 	_update_hover()
-	if player_ref != null:
-		queue_redraw()
+	if player_ref != null and world != null:
+		# Solo redibujar si el marker del jugador cambió de pixel en el minimap
+		var wx_total: float = world.width * tile_display
+		var wy_total: float = world.height * tile_display
+		var px: float = (player_ref.position.x / wx_total) * size.x
+		var py: float = (player_ref.position.y / wy_total) * size.y
+		var rounded := Vector2(round(px), round(py))
+		if rounded != _last_player_minimap_pos:
+			_last_player_minimap_pos = rounded
+			queue_redraw()
 
 
 func _update_hover() -> void:
@@ -105,8 +119,10 @@ func _update_hover() -> void:
 	# Convertir mouse_local → coordenadas de mundo
 	var wx: float = (mouse_local.x / size.x) * world.width
 	var wy: float = (mouse_local.y / size.y) * world.height
-	# Buscar el POI más cercano dentro de radio (en pixeles del minimapa, equivale a ~3-5 tiles)
-	var hover_radius_tiles: float = maxf(world.width, world.height) / minf(size.x, size.y) * 5.0
+	# Radio de hover FIJO en pixeles del minimapa (~10px), convertido a tiles del mundo.
+	# Antes usaba multiplicador 5x lo cual daba 28 tiles en minimap chico — casi any POI.
+	var hover_radius_px: float = 10.0
+	var hover_radius_tiles: float = hover_radius_px * maxf(world.width, world.height) / maxf(size.x, size.y)
 	var hover_radius_sq: float = hover_radius_tiles * hover_radius_tiles
 	var best = null
 	var best_d: float = 1e12
@@ -121,15 +137,15 @@ func _update_hover() -> void:
 	if hover_poi != null:
 		var name_str: String = POI_NAMES.get(hover_poi.type, "?")
 		tooltip_label.text = "%s\n(%d, %d)" % [name_str, hover_poi.pos.x, hover_poi.pos.y]
-		# Posicionar tooltip cerca del cursor, evitando salir del minimapa
+		# Tamaño REAL del label (no estimación) para clamp correcto
+		tooltip_label.reset_size()
+		var real_w: float = tooltip_label.size.x
+		var real_h: float = tooltip_label.size.y
 		var pos: Vector2 = mouse_local + Vector2(14, 8)
-		# Estimar tamaño y ajustar si se sale
-		var est_w: float = 220.0
-		var est_h: float = 38.0
-		if pos.x + est_w > size.x:
-			pos.x = mouse_local.x - est_w - 8
-		if pos.y + est_h > size.y:
-			pos.y = mouse_local.y - est_h - 4
+		if pos.x + real_w > size.x:
+			pos.x = mouse_local.x - real_w - 8
+		if pos.y + real_h > size.y:
+			pos.y = mouse_local.y - real_h - 4
 		tooltip_label.position = pos
 		tooltip_label.visible = true
 	else:
@@ -143,10 +159,10 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2(-4, -4), size + Vector2(8, 8)), Color(0, 0, 0, 0.7), true)
 	# Mapa
 	draw_texture_rect(biome_texture, Rect2(Vector2.ZERO, size), false)
-	# POIs
+	# POIs — radio sub-pixel calculado con minf/clampf
 	var sx: float = size.x / float(world.width)
 	var sy: float = size.y / float(world.height)
-	var dot_r: float = clampf(mini(int(sx), int(sy)), 2.0, 5.0)
+	var dot_r: float = clampf(minf(sx, sy) * 1.4, 2.0, 6.0)
 	for poi in world.pois:
 		var c: Color = POI_COLORS.get(poi.type, Color.WHITE)
 		var px: float = poi.pos.x * sx
@@ -157,16 +173,17 @@ func _draw() -> void:
 		# Anillo extra si está hovered
 		if hover_poi == poi:
 			draw_arc(Vector2(px, py), dot_r + 3.0, 0, TAU, 24, Color(1.0, 1.0, 0.6, 1.0), 1.5)
-	# Player marker
+	# Player marker — radios escalan con tamaño del minimap
 	if player_ref:
 		var wx_total: float = world.width * tile_display
 		var wy_total: float = world.height * tile_display
 		var ppx: float = (player_ref.position.x / wx_total) * size.x
 		var ppy: float = (player_ref.position.y / wy_total) * size.y
-		draw_circle(Vector2(ppx, ppy), 6.0, Color(0, 0, 0, 0.9))
-		draw_circle(Vector2(ppx, ppy), 4.0, Color(1.0, 1.0, 0.4))
-		# Cruz para localización rápida
-		draw_line(Vector2(ppx - 8, ppy), Vector2(ppx + 8, ppy), Color(1.0, 1.0, 0.4, 0.5), 1.0)
-		draw_line(Vector2(ppx, ppy - 8), Vector2(ppx, ppy + 8), Color(1.0, 1.0, 0.4, 0.5), 1.0)
+		var marker_r: float = clampf(minf(sx, sy) * 1.8, 4.0, 8.0)
+		var cross_r: float = marker_r * 2.0
+		draw_circle(Vector2(ppx, ppy), marker_r + 1.5, Color(0, 0, 0, 0.9))
+		draw_circle(Vector2(ppx, ppy), marker_r, Color(1.0, 1.0, 0.4))
+		draw_line(Vector2(ppx - cross_r, ppy), Vector2(ppx + cross_r, ppy), Color(1.0, 1.0, 0.4, 0.5), 1.0)
+		draw_line(Vector2(ppx, ppy - cross_r), Vector2(ppx, ppy + cross_r), Color(1.0, 1.0, 0.4, 0.5), 1.0)
 	# Borde
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.9, 0.85, 0.6, 0.8), false, 2.0)

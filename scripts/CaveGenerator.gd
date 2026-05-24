@@ -92,8 +92,11 @@ func generate(w: int, h: int, seed_value: int) -> Cave:
 	for i in range(num_branches):
 		var angle: float = (TAU / num_branches) * i + rng.randf() * 0.5
 		var dist: float = chamber_r + 6 + rng.randf() * 8
-		var ex: int = chamber_cx + int(cos(angle) * dist)
-		var ey: int = chamber_cy + int(sin(angle) * dist)
+		var ex_raw: int = chamber_cx + int(cos(angle) * dist)
+		var ey_raw: int = chamber_cy + int(sin(angle) * dist)
+		# Clamp endpoints DENTRO del mapa para que drunk_walk y _carve_chamber compartan coords
+		var ex: int = clampi(ex_raw, 3, w - 4)
+		var ey: int = clampi(ey_raw, 3, h - 4)
 		_drunk_walk(cave, Vector2i(chamber_cx, chamber_cy), Vector2i(ex, ey), 1 + rng.randi() % 2)
 		# Pequeña cámara al final
 		if rng.randf() < 0.6:
@@ -109,8 +112,18 @@ func generate(w: int, h: int, seed_value: int) -> Cave:
 
 	cave.spawn = Vector2i(entry_x, entry_y)
 	cave.exit_pos = Vector2i(sec_cx, sec_cy)
-	cave.set_wall(cave.spawn.x, cave.spawn.y, 0)
-	cave.set_wall(cave.exit_pos.x, cave.exit_pos.y, 0)
+	# Force 3x3 clear alrededor de spawn y exit para evitar 1-tile islands
+	# (perlin del _carve_chamber puede dejar walls aislados en el centro).
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var sx: int = cave.spawn.x + dx
+			var sy: int = cave.spawn.y + dy
+			if sx > 0 and sx < w - 1 and sy > 0 and sy < h - 1:
+				cave.set_wall(sx, sy, 0)
+			var ex: int = cave.exit_pos.x + dx
+			var ey: int = cave.exit_pos.y + dy
+			if ex > 0 and ex < w - 1 and ey > 0 and ey < h - 1:
+				cave.set_wall(ex, ey, 0)
 
 	# === DECORACIONES de piso (rocas, charcos) ===
 	# Floor cells dispersos: poner una "isolated rock" del atlas (row 7) sobre piso
@@ -150,7 +163,7 @@ func _carve_chamber(cave: Cave, cx: int, cy: int, r: int, noise_amp: float) -> v
 func _drunk_walk(cave: Cave, a: Vector2i, b: Vector2i, width: int) -> void:
 	# Drunkard's walk: 70% paso hacia target, 30% paso aleatorio. Genera corredores orgánicos.
 	var x: int = a.x; var y: int = a.y
-	var max_steps: int = (absi(a.x - b.x) + absi(a.y - b.y)) * 5
+	var max_steps: int = (absi(a.x - b.x) + absi(a.y - b.y)) * 10  # antes *5, puede no alcanzar
 	var steps: int = 0
 	while steps < max_steps and (x != b.x or y != b.y):
 		# Pinta área alrededor del paso actual
@@ -179,6 +192,24 @@ func _drunk_walk(cave: Cave, a: Vector2i, b: Vector2i, width: int) -> void:
 		x = clampi(x, 2, cave.width - 3)
 		y = clampi(y, 2, cave.height - 3)
 		steps += 1
+	# Si no llegamos a b, Bresenham fallback para garantizar conectividad
+	if x != b.x or y != b.y:
+		var bx: int = clampi(b.x, 2, cave.width - 3)
+		var by: int = clampi(b.y, 2, cave.height - 3)
+		var dx_b: int = absi(bx - x); var dy_b: int = absi(by - y)
+		var sx_b: int = 1 if x < bx else -1
+		var sy_b: int = 1 if y < by else -1
+		var err_b: int = dx_b - dy_b
+		while x != bx or y != by:
+			for ddy in range(-width, width + 1):
+				for ddx in range(-width, width + 1):
+					if ddx * ddx + ddy * ddy > width * width + 1: continue
+					var px: int = x + ddx; var py: int = y + ddy
+					if px > 0 and py > 0 and px < cave.width - 1 and py < cave.height - 1:
+						cave.set_wall(px, py, 0)
+			var e2_b: int = 2 * err_b
+			if e2_b > -dy_b: err_b -= dy_b; x += sx_b
+			if e2_b < dx_b: err_b += dx_b; y += sy_b
 
 
 # --- AUTOTILE ---

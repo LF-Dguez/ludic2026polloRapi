@@ -126,6 +126,7 @@ class World:
 	var biomes: PackedInt32Array
 	var tiles: PackedInt32Array  # packed: (src<<16) | (x<<8) | y
 	var pois: Array = []
+	var bridges: Array = []  # Array[Vector2i] — posiciones exactas de tiles puente
 	var seed_value: int
 
 	func get_biome(x: int, y: int) -> int:
@@ -158,6 +159,7 @@ func generate(w: int, h: int, seed_value: int) -> World:
 	world.tiles = PackedInt32Array()
 	world.tiles.resize(w * h)
 	world.pois = []
+	world.bridges = []
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
@@ -182,11 +184,14 @@ func generate(w: int, h: int, seed_value: int) -> World:
 	n_minero.noise_type = FastNoiseLite.TYPE_CELLULAR
 	n_minero.frequency = 0.018
 	n_minero.cellular_distance_function = FastNoiseLite.DISTANCE_EUCLIDEAN
+	# CellularReturnType.CELL_VALUE → ~uniforme [-1,1] (antes DISTANCE → casi siempre negativo)
+	n_minero.cellular_return_type = FastNoiseLite.RETURN_CELL_VALUE
 
 	var n_mesa := FastNoiseLite.new()
 	n_mesa.seed = seed_value + 5077
 	n_mesa.noise_type = FastNoiseLite.TYPE_CELLULAR
 	n_mesa.frequency = 0.012
+	n_mesa.cellular_return_type = FastNoiseLite.RETURN_CELL_VALUE
 
 	# Picos (Cerro Mohinora etc.)
 	var peaks := [
@@ -214,31 +219,33 @@ func generate(w: int, h: int, seed_value: int) -> World:
 			var ms: float = n_mesa.get_noise_2d(x, y)
 
 			var biome: int
-			if elev > 0.95:
+			# Thresholds ajustados: PICO 0.88 (era 0.95, casi inalcanzable),
+			# MESA sin humid gate (era doble-raro), MINERO con cell-value uniforme.
+			if elev > 0.88:
 				biome = Biome.PICO
-			elif elev > 0.78:
-				if absf(noise) > 0.15:
+			elif elev > 0.74:
+				if absf(noise) > 0.13:
 					biome = Biome.BARRANCA
 				else:
 					biome = Biome.SIERRA
-			elif elev > 0.62:
+			elif elev > 0.58:
 				biome = Biome.SIERRA
-			elif elev > 0.48:
+			elif elev > 0.45:
 				if humid > 0.55:
 					biome = Biome.SIERRA
 				else:
 					biome = Biome.LLANOS
-			elif elev > 0.30:
-				if m > 0.40:
+			elif elev > 0.28:
+				if m > 0.30:
 					biome = Biome.MINERO
-				elif ms > 0.50 and humid < 0.5:
+				elif ms > 0.35:
 					biome = Biome.MESA
 				else:
 					biome = Biome.LLANOS
-			elif elev > 0.15:
-				if m > 0.45:
+			elif elev > 0.12:
+				if m > 0.30:
 					biome = Biome.MINERO
-				elif ms > 0.55:
+				elif ms > 0.40:
 					biome = Biome.MESA
 				elif humid > 0.65:
 					biome = Biome.LLANOS
@@ -249,8 +256,8 @@ func generate(w: int, h: int, seed_value: int) -> World:
 
 			world.set_biome(x, y, biome)
 
-	# === Pase 2: Ríos (angostos) ===
-	_carve_river(world, [
+	# === Pase 2: Ríos con perlin perturbation (curvas naturales) + riberas + puentes ===
+	_carve_river_natural(world, [
 		Vector2i(int(w * 0.12), int(h * 0.85)),
 		Vector2i(int(w * 0.22), int(h * 0.72)),
 		Vector2i(int(w * 0.32), int(h * 0.65)),
@@ -260,30 +267,33 @@ func generate(w: int, h: int, seed_value: int) -> World:
 		Vector2i(int(w * 0.72), int(h * 0.38)),
 		Vector2i(int(w * 0.82), int(h * 0.30)),
 		Vector2i(int(w * 0.95), int(h * 0.18)),
-	], 1)
-	_carve_river(world, [
+	], 2, rng)  # Conchos principal (ancho varía 1-3)
+	_carve_river_natural(world, [
 		Vector2i(int(w * 0.58), int(h * 0.92)),
 		Vector2i(int(w * 0.58), int(h * 0.80)),
 		Vector2i(int(w * 0.60), int(h * 0.68)),
 		Vector2i(int(w * 0.60), int(h * 0.55)),
-	], 0)
-	_carve_river(world, [
+	], 1, rng)
+	_carve_river_natural(world, [
 		Vector2i(int(w * 0.18), int(h * 0.08)),
 		Vector2i(int(w * 0.25), int(h * 0.12)),
 		Vector2i(int(w * 0.32), int(h * 0.18)),
 		Vector2i(int(w * 0.32), int(h * 0.25)),
-	], 0)
-	_carve_river(world, [
+	], 1, rng)
+	_carve_river_natural(world, [
 		Vector2i(int(w * 0.45), int(h * 0.10)),
 		Vector2i(int(w * 0.52), int(h * 0.30)),
 		Vector2i(int(w * 0.55), int(h * 0.48)),
-	], 0)
+	], 1, rng)
+
+	# === Pase 2.5: Puentes PROCEDURALES — recolecta tiles de río, elige K random con min-dist ===
+	_place_random_bridges(world, rng, 7, 22)
 
 	# === Pase 3: variantes (decoraciones) ===
 	var n_decor := FastNoiseLite.new()
 	n_decor.seed = seed_value + 4099
 	n_decor.noise_type = FastNoiseLite.TYPE_VALUE
-	n_decor.frequency = 0.7
+	n_decor.frequency = 0.25  # antes 0.7 — daba ruido casi puro; baja agrupa decor
 
 	for y in range(h):
 		for x in range(w):
@@ -306,34 +316,133 @@ func generate(w: int, h: int, seed_value: int) -> World:
 	for poi in world.pois:
 		_stamp_poi(world, poi)
 
+	# === Pase 5: pinta tiles bridge desde world.bridges (tracking explícito) ===
+	# Evita false-positives donde barranca natural toca río pero NO es un puente.
+	for bp in world.bridges:
+		var bxy: Vector2i = bp
+		if world.in_bounds(bxy.x, bxy.y):
+			world.set_tile(bxy.x, bxy.y, Vector2i(2, 2))  # T_BRIDGE
+
 	return world
 
 
-func _carve_river(world: World, waypoints: Array, width: int) -> void:
+func _carve_river_natural(world: World, waypoints: Array, base_width: int, rng: RandomNumberGenerator) -> void:
+	var noise := FastNoiseLite.new()
+	noise.seed = world.seed_value + 7919 + waypoints[0].x + waypoints[0].y
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	noise.frequency = 0.06
 	for i in range(waypoints.size() - 1):
-		_draw_line_river(world, waypoints[i], waypoints[i + 1], width)
+		_draw_river_perlin(world, waypoints[i], waypoints[i + 1], base_width, noise)
 
 
-func _draw_line_river(world: World, a: Vector2i, b: Vector2i, width: int) -> void:
-	var x0: int = a.x; var y0: int = a.y
-	var x1: int = b.x; var y1: int = b.y
-	var dx: int = absi(x1 - x0); var dy: int = absi(y1 - y0)
-	var sx: int = 1 if x0 < x1 else -1
-	var sy: int = 1 if y0 < y1 else -1
-	var err: int = dx - dy
-	while true:
-		for ny in range(-width, width + 1):
-			for nx in range(-width, width + 1):
-				if nx * nx + ny * ny > width * width:
-					continue
-				var px: int = x0 + nx; var py: int = y0 + ny
-				if world.in_bounds(px, py):
-					world.set_biome(px, py, Biome.RIO)
-		if x0 == x1 and y0 == y1:
+func _draw_river_perlin(world: World, a: Vector2i, b: Vector2i, base_width: int, noise: FastNoiseLite) -> void:
+	# Interpola de a→b en pasos pequeños, perturbando lateralmente con perlin.
+	var distance: float = Vector2(a).distance_to(Vector2(b))
+	var steps: int = int(distance * 1.3)
+	if steps < 2:
+		steps = 2
+	var dir: Vector2 = (Vector2(b) - Vector2(a)).normalized()
+	var perp: Vector2 = Vector2(-dir.y, dir.x)
+	for s in range(steps + 1):
+		var t: float = float(s) / float(steps)
+		var base_x: float = lerp(float(a.x), float(b.x), t)
+		var base_y: float = lerp(float(a.y), float(b.y), t)
+		# Perturbación perpendicular (sin falloff en los extremos para conectar bien)
+		var falloff: float = sin(t * PI)
+		var lateral: float = noise.get_noise_2d(base_x * 0.5, base_y * 0.5) * 6.0 * falloff
+		var cx: int = int(base_x + perp.x * lateral)
+		var cy: int = int(base_y + perp.y * lateral)
+		# Ancho variable según otro noise
+		var w_variation: float = noise.get_noise_2d(base_x * 0.3 + 99.0, base_y * 0.3 + 99.0) * 0.5 + 0.5
+		var effective_w: int = base_width + (1 if w_variation > 0.65 else 0)
+		_paint_river_at(world, cx, cy, effective_w)
+
+
+func _paint_river_at(world: World, cx: int, cy: int, width: int) -> void:
+	for dy in range(-width, width + 1):
+		for dx in range(-width, width + 1):
+			if dx * dx + dy * dy > width * width:
+				continue
+			var x: int = cx + dx
+			var y: int = cy + dy
+			if x < 0 or y < 0 or x >= world.width or y >= world.height:
+				continue
+			world.set_biome(x, y, Biome.RIO)
+
+
+# Placement procedural de puentes: recolecta tiles de río, shuffle con rng,
+# coloca hasta `target_count` con min-distance entre ellos. Trackea posiciones
+# en world.bridges para que pase 5 las pinte como T_BRIDGE sin falsos positivos.
+func _place_random_bridges(world: World, rng: RandomNumberGenerator, target_count: int, min_dist: int) -> void:
+	var river_tiles: Array[Vector2i] = []
+	for y in range(world.height):
+		for x in range(world.width):
+			if world.get_biome(x, y) == Biome.RIO:
+				river_tiles.append(Vector2i(x, y))
+	if river_tiles.is_empty():
+		return
+	# Fisher-Yates shuffle determinístico
+	for i in range(river_tiles.size() - 1, 0, -1):
+		var j: int = rng.randi() % (i + 1)
+		var tmp: Vector2i = river_tiles[i]
+		river_tiles[i] = river_tiles[j]
+		river_tiles[j] = tmp
+	var placed: Array[Vector2i] = []
+	for t in river_tiles:
+		if placed.size() >= target_count:
 			break
-		var e2: int = 2 * err
-		if e2 > -dy: err -= dy; x0 += sx
-		if e2 < dx: err += dx; y0 += sy
+		var too_close: bool = false
+		for p in placed:
+			var dx: int = t.x - p.x
+			var dy: int = t.y - p.y
+			if dx * dx + dy * dy < min_dist * min_dist:
+				too_close = true
+				break
+		if too_close:
+			continue
+		if world.get_biome(t.x, t.y) != Biome.RIO:
+			continue
+		# Detectar orientación local del río
+		var horiz: int = 0
+		var vert: int = 0
+		for dx in [-1, 1]:
+			if world.in_bounds(t.x + dx, t.y) and world.get_biome(t.x + dx, t.y) == Biome.RIO:
+				horiz += 1
+		for dy in [-1, 1]:
+			if world.in_bounds(t.x, t.y + dy) and world.get_biome(t.x, t.y + dy) == Biome.RIO:
+				vert += 1
+		if horiz + vert == 0:
+			continue
+		# Puente PERPENDICULAR al flujo, expandiendo hasta cubrir TODO el ancho del río
+		# (ríos pueden ser 5-7 tiles de ancho, bridge debe alcanzar ambos bancos).
+		var bridge_cells: Array[Vector2i] = []
+		if horiz >= vert:
+			# Río corre E-W → puente N-S: walk hacia arriba y abajo desde t
+			bridge_cells.append(t)
+			var y_up: int = t.y - 1
+			while world.in_bounds(t.x, y_up) and world.get_biome(t.x, y_up) == Biome.RIO:
+				bridge_cells.append(Vector2i(t.x, y_up))
+				y_up -= 1
+			var y_dn: int = t.y + 1
+			while world.in_bounds(t.x, y_dn) and world.get_biome(t.x, y_dn) == Biome.RIO:
+				bridge_cells.append(Vector2i(t.x, y_dn))
+				y_dn += 1
+		else:
+			# Río corre N-S → puente E-W
+			bridge_cells.append(t)
+			var x_l: int = t.x - 1
+			while world.in_bounds(x_l, t.y) and world.get_biome(x_l, t.y) == Biome.RIO:
+				bridge_cells.append(Vector2i(x_l, t.y))
+				x_l -= 1
+			var x_r: int = t.x + 1
+			while world.in_bounds(x_r, t.y) and world.get_biome(x_r, t.y) == Biome.RIO:
+				bridge_cells.append(Vector2i(x_r, t.y))
+				x_r += 1
+		# Marcar cada celda del puente: bioma cambia (libera la "impasable RIO") + trackeo
+		for bc in bridge_cells:
+			world.set_biome(bc.x, bc.y, Biome.BARRANCA)
+			world.bridges.append(bc)
+		placed.append(t)
 
 
 func _make_poi(pos: Vector2i, type: int) -> POI:
@@ -342,31 +451,37 @@ func _make_poi(pos: Vector2i, type: int) -> POI:
 
 
 func _place_pois_chihuahua(world: World, rng: RandomNumberGenerator) -> void:
-	# === ANCHORS handcrafted (siempre intentar primero) ===
-	# Mata Ortiz: NW Llanos
-	var mata := _find_passable_near(world, Vector2i(int(world.width * 0.25), int(world.height * 0.22)), 30)
-	if mata != Vector2i(-1, -1):
+	# === ANCHORS handcrafted (priorizar bioma natural + _too_close vs anchors previos) ===
+	# Mata Ortiz: NW Llanos (prefiere LLANOS, fallback DESIERTO)
+	var mata_center := Vector2i(int(world.width * 0.25), int(world.height * 0.22))
+	var mata := _find_biome_near(world, Biome.LLANOS, mata_center, 30)
+	if mata == Vector2i(-1, -1):
+		mata = _find_biome_near(world, Biome.DESIERTO, mata_center, 30)
+	if mata != Vector2i(-1, -1) and not _too_close(mata, world.pois, 25):
 		world.pois.append(_make_poi(mata, POIType.MATA_ORTIZ))
 
 	# Paquimé anchor (NW Desierto)
-	var paq := _find_biome_near(world, Biome.DESIERTO,
-		Vector2i(int(world.width * 0.30), int(world.height * 0.18)), 30)
+	var paq_center := Vector2i(int(world.width * 0.30), int(world.height * 0.18))
+	var paq := _find_biome_near(world, Biome.DESIERTO, paq_center, 30)
 	if paq == Vector2i(-1, -1):
-		paq = _find_passable_near(world, Vector2i(int(world.width * 0.30), int(world.height * 0.18)), 30)
-	if paq != Vector2i(-1, -1):
+		paq = _find_passable_near(world, paq_center, 30)
+	if paq != Vector2i(-1, -1) and not _too_close(paq, world.pois, 22):
 		world.pois.append(_make_poi(paq, POIType.ENTRADA_PAQUIME))
 
-	# Parral (S) misión handcrafted
-	var parral := _find_passable_near(world, Vector2i(int(world.width * 0.45), int(world.height * 0.85)), 30)
-	if parral != Vector2i(-1, -1):
+	# Parral (S) misión handcrafted (prefiere LLANOS)
+	var parral_center := Vector2i(int(world.width * 0.45), int(world.height * 0.85))
+	var parral := _find_biome_near(world, Biome.LLANOS, parral_center, 30)
+	if parral == Vector2i(-1, -1):
+		parral = _find_passable_near(world, parral_center, 30)
+	if parral != Vector2i(-1, -1) and not _too_close(parral, world.pois, 25):
 		world.pois.append(_make_poi(parral, POIType.MISION))
 
-	# Naica anchor
-	var naica := _find_biome_near(world, Biome.MINERO,
-		Vector2i(int(world.width * 0.72), int(world.height * 0.62)), 30)
+	# Naica anchor — solo si hay MINERO o DESIERTO cerca (no plopear mina en grassland)
+	var naica_center := Vector2i(int(world.width * 0.72), int(world.height * 0.62))
+	var naica := _find_biome_near(world, Biome.MINERO, naica_center, 30)
 	if naica == Vector2i(-1, -1):
-		naica = _find_passable_near(world, Vector2i(int(world.width * 0.72), int(world.height * 0.62)), 30)
-	if naica != Vector2i(-1, -1):
+		naica = _find_biome_near(world, Biome.DESIERTO, naica_center, 30)
+	if naica != Vector2i(-1, -1) and not _too_close(naica, world.pois, 22):
 		world.pois.append(_make_poi(naica, POIType.ENTRADA_NAICA))
 
 	# === SCATTER procgen (random + min-distance, NO grids) ===
@@ -385,9 +500,9 @@ func _place_pois_chihuahua(world: World, rng: RandomNumberGenerator) -> void:
 	# Mata Ortiz extras (raros)
 	_scatter_random(world, [Biome.LLANOS], POIType.MATA_ORTIZ,
 		4, 60, rng, 0.10, 0.90, 0.10, 0.90)
-	# Cementerios sembrados
+	# Cementerios sembrados — min_dist 35 (stamps 17x17, evitar overlap)
 	_scatter_random(world, [Biome.LLANOS, Biome.DESIERTO], POIType.CEMENTERIO,
-		12, 18, rng, 0.05, 0.95, 0.05, 0.95)
+		10, 35, rng, 0.05, 0.95, 0.05, 0.95)
 
 
 # Scatter aleatorio con min-distance — distribución natural tipo Poisson disk simplificada.
@@ -423,13 +538,199 @@ func _stamp_poi(world: World, poi) -> void:
 			_stamp_tarahumara(world, poi.pos)
 		POIType.ENTRADA_NAICA:
 			_stamp_naica(world, poi.pos)
+		POIType.MATA_ORTIZ:
+			_stamp_mata_ortiz(world, poi.pos)
+		POIType.MISION:
+			_stamp_mision(world, poi.pos)
+		POIType.CEMENTERIO:
+			_stamp_cementerio(world, poi.pos)
 		_:
 			world.set_tile(poi.pos.x, poi.pos.y, POI_TILE[poi.type])
 
 
-func _stamp_paquime(world: World, center: Vector2i) -> void:
-	# Estampa 9x9 — ruinas masivas con muros gruesos, piso crema, entrada central, sendero
-	var R := 4
+# === Mata Ortiz: pueblo de cerámica procedural ===
+# Tamaño total ~25x25: plaza grande + chozas variadas + alambrada perimetral + decoración densa
+func _stamp_mata_ortiz(world: World, center: Vector2i) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = world.seed_value + center.x * 1031 + center.y * 2069
+
+	var VR: int = 12  # village radius
+
+	# 1) Plaza central 5x5 cream floor con fogata
+	for dy in range(-2, 3):
+		for dx in range(-2, 3):
+			var x: int = center.x + dx
+			var y: int = center.y + dy
+			if world.in_bounds(x, y):
+				world.set_tile(x, y, T_CREAM_FLOOR)
+	world.set_tile(center.x, center.y, POI_TILE[POIType.MATA_ORTIZ])
+	# Fogata comunitaria al lado norte de la plaza
+	if world.in_bounds(center.x, center.y - 2):
+		world.set_tile(center.x, center.y - 2, Vector2i(4, 5))  # fogata
+
+	# 2) Chozas — 7-11 estructuras de tamaños variados
+	var num_houses: int = 7 + rng.randi() % 5
+	var placed: Array[Vector2i] = []
+	var attempts: int = 0
+	while placed.size() < num_houses and attempts < 120:
+		attempts += 1
+		var angle: float = rng.randf() * TAU
+		var dist: float = 5.0 + rng.randf() * (VR - 3)
+		var hx: int = center.x + int(cos(angle) * dist)
+		var hy: int = center.y + int(sin(angle) * dist)
+		if not world.in_bounds(hx, hy):
+			continue
+		# No muy cerca de otra choza ni del perímetro
+		var too_close: bool = false
+		for hp in placed:
+			if absi(hp.x - hx) < 5 and absi(hp.y - hy) < 5:
+				too_close = true
+				break
+		if too_close:
+			continue
+		# Tamaño variado: chozas pequeñas (half=1, 3x3) o medianas (half=2, 5x5)
+		var house_half: int = 1 if rng.randf() < 0.5 else 2
+		# 25% probabilidad de ruina (rancho quemado)
+		var ruined: bool = rng.randf() < 0.25
+		_build_house_v2(world, Vector2i(hx, hy), house_half, rng, ruined)
+		placed.append(Vector2i(hx, hy))
+
+	# 3) Caminos conectando chozas a la plaza
+	for hp in placed:
+		_draw_dirt_path(world, hp, center)
+
+	# 4) Perímetro de alambrada (cerca)
+	var fence_r: int = VR - 1
+	for ang_i in range(0, 360, 8):
+		var ang: float = deg_to_rad(ang_i + rng.randf() * 6.0)
+		var fx: int = center.x + int(cos(ang) * fence_r)
+		var fy: int = center.y + int(sin(ang) * fence_r)
+		if not world.in_bounds(fx, fy):
+			continue
+		var raw_f: int = world.get_tile_raw(fx, fy)
+		if not _is_structure(raw_f):
+			world.set_tile(fx, fy, Vector2i(3, 5))  # alambrada
+
+	# 5) Decoración densa: ollas Mata Ortiz, monolitos, fogatas
+	for _i in range(rng.randi_range(8, 14)):
+		var ox: int = center.x + rng.randi_range(-VR + 1, VR - 1)
+		var oy: int = center.y + rng.randi_range(-VR + 1, VR - 1)
+		if not world.in_bounds(ox, oy):
+			continue
+		var raw: int = world.get_tile_raw(ox, oy)
+		if _is_structure(raw):
+			continue
+		var roll: float = rng.randf()
+		if roll < 0.5:
+			world.set_tile(ox, oy, Vector2i(7, 5))  # monolito (olla grande)
+		elif roll < 0.75:
+			world.set_tile(ox, oy, Vector2i(6, 5))  # huellas
+		else:
+			world.set_tile(ox, oy, Vector2i(4, 5))  # fogata pequeña
+
+
+# === Misión jesuita procedural — iglesia CRUCIFORME + campanario + atrio ===
+func _stamp_mision(world: World, center: Vector2i) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = world.seed_value + center.x * 3041 + center.y * 4099
+
+	# 1) Atrio exterior 13x13 — piso crema, perímetro de roca con apertura sur
+	var R: int = 6
+	for dy in range(-R, R + 1):
+		for dx in range(-R, R + 1):
+			var x: int = center.x + dx
+			var y: int = center.y + dy
+			if not world.in_bounds(x, y):
+				continue
+			if absi(dx) == R and absi(dy) == R:
+				continue
+			if absi(dx) == R or absi(dy) == R:
+				# Borde con apertura sur de 3 tiles
+				if dy == R and absi(dx) <= 1:
+					world.set_tile(x, y, T_DIRT_PATH)
+				else:
+					world.set_tile(x, y, Vector2i(6, 1))  # roca
+			else:
+				world.set_tile(x, y, T_CREAM_FLOOR)
+
+	# 2) Iglesia CRUCIFORME (forma de cruz)
+	# Nave central vertical: 3 ancho × 7 alto
+	# Transepto horizontal: 7 ancho × 3 alto
+	# Ambos cruzan en el centro
+	var NW: int = 1  # ancho de la nave (1 → 3 tiles de ancho)
+	var NH: int = 3  # alto desde centro hacia cada extremo de la nave (7 total)
+	var TW: int = 3  # ancho desde centro hacia cada extremo del transepto (7 total)
+	var TH: int = 1  # alto del transepto (3 tiles)
+
+	# Pintar nave (vertical)
+	for dy in range(-NH, NH + 1):
+		for dx in range(-NW, NW + 1):
+			var x: int = center.x + dx
+			var y: int = center.y + dy
+			if not world.in_bounds(x, y):
+				continue
+			if absi(dx) == NW and absi(dy) > TH:
+				world.set_tile(x, y, T_ADOBE_WALL)
+			elif absi(dy) == NH:
+				world.set_tile(x, y, T_ADOBE_WALL)
+			else:
+				world.set_tile(x, y, T_CREAM_FLOOR)
+
+	# Pintar transepto (horizontal)
+	for dy in range(-TH, TH + 1):
+		for dx in range(-TW, TW + 1):
+			var x: int = center.x + dx
+			var y: int = center.y + dy
+			if not world.in_bounds(x, y):
+				continue
+			if absi(dx) == TW:
+				world.set_tile(x, y, T_ADOBE_WALL)
+			elif absi(dy) == TH and absi(dx) > NW:
+				world.set_tile(x, y, T_ADOBE_WALL)
+			else:
+				world.set_tile(x, y, T_CREAM_FLOOR)
+
+	# Altar central
+	world.set_tile(center.x, center.y, POI_TILE[POIType.MISION])
+
+	# Puerta sur de la iglesia
+	if world.in_bounds(center.x, center.y + NH):
+		world.set_tile(center.x, center.y + NH, T_DIRT_PATH)
+
+	# 3) Campanario al NE (2x2 monolitos darker)
+	for dy in range(-NH - 2, -NH):
+		for dx in range(NW + 1, NW + 3):
+			var x: int = center.x + dx
+			var y: int = center.y + dy
+			if world.in_bounds(x, y):
+				world.set_tile(x, y, Vector2i(7, 5))  # monolito = piedra del campanario
+
+	# 4) Sendero exterior al sur extendiendo hacia afuera
+	for dy2 in range(R + 1, R + 6):
+		for ddx in range(-1, 2):
+			var px: int = center.x + ddx
+			var py: int = center.y + dy2
+			if world.in_bounds(px, py):
+				world.set_tile(px, py, T_DIRT_PATH)
+
+	# 5) Cruces (calaveras) y huesos dispersos como restos en el atrio
+	for _i in range(rng.randi_range(3, 6)):
+		var gx: int = center.x + rng.randi_range(-R + 1, R - 1)
+		var gy: int = center.y + rng.randi_range(-R + 1, R - 1)
+		if not world.in_bounds(gx, gy):
+			continue
+		var raw: int = world.get_tile_raw(gx, gy)
+		if not _is_structure(raw):
+			world.set_tile(gx, gy, Vector2i(4, 0) if rng.randf() < 0.5 else Vector2i(7, 0))
+
+
+# === Cementerio procedural — barda doble + capilla + lápidas en clusters ===
+func _stamp_cementerio(world: World, center: Vector2i) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = world.seed_value + center.x * 5051 + center.y * 6101
+
+	# Perímetro 17x17 de roca DOBLE GROSOR
+	var R: int = 8
 	for dy in range(-R, R + 1):
 		for dx in range(-R, R + 1):
 			var x: int = center.x + dx
@@ -437,24 +738,243 @@ func _stamp_paquime(world: World, center: Vector2i) -> void:
 			if not world.in_bounds(x, y):
 				continue
 			var ad: int = maxi(absi(dx), absi(dy))
-			# Esquinas del 9x9 las dejamos sin pintar (ruinas)
-			if ad == R and absi(dx) == R and absi(dy) == R:
+			# Esquinas exteriores libres
+			if absi(dx) == R and absi(dy) == R:
 				continue
-			if dx == 0 and dy == 0:
-				world.set_tile(x, y, POI_TILE[POIType.ENTRADA_PAQUIME])
-			elif ad == R:
-				# Borde exterior: muros adobe
-				world.set_tile(x, y, T_ADOBE_WALL)
+			# Apertura sur de 3 tiles en barda (dirt path)
+			if ad == R and dy == R and absi(dx) <= 1:
+				world.set_tile(x, y, T_DIRT_PATH)
+				continue
+			if ad == R - 1 and dy == R - 1 and absi(dx) <= 1:
+				world.set_tile(x, y, T_DIRT_PATH)
+				continue
+			# Barda doble (R y R-1)
+			if ad == R:
+				if absi(dx) == R - 1 and absi(dy) == R - 1:
+					world.set_tile(x, y, Vector2i(7, 5))  # monolito esquina exterior
+				else:
+					world.set_tile(x, y, Vector2i(6, 1))  # roca exterior
 			elif ad == R - 1:
-				# Anillo interior: piso crema (patio)
-				world.set_tile(x, y, T_CREAM_FLOOR)
-			elif ad == 1:
-				# Anillo cercano al centro: muros derruidos
-				world.set_tile(x, y, T_ADOBE_WALL)
+				world.set_tile(x, y, Vector2i(6, 1))  # roca interior
+
+	# Capilla 5x3 al norte
+	var cap_y: int = center.y - 5
+	for dy in range(-1, 2):
+		for dx in range(-2, 3):
+			var cx: int = center.x + dx
+			var cy: int = cap_y + dy
+			if not world.in_bounds(cx, cy):
+				continue
+			if absi(dx) == 2 or absi(dy) == 1:
+				world.set_tile(cx, cy, T_ADOBE_WALL)
+			else:
+				world.set_tile(cx, cy, T_CREAM_FLOOR)
+	# Altar en capilla (cementerio tile)
+	world.set_tile(center.x, cap_y, POI_TILE[POIType.CEMENTERIO])
+	# Puerta sur de la capilla
+	if world.in_bounds(center.x, cap_y + 1):
+		world.set_tile(center.x, cap_y + 1, T_DIRT_PATH)
+
+	# Fogata ritual en el centro
+	world.set_tile(center.x, center.y, Vector2i(4, 5))
+
+	# Camino central N-S desde capilla a entrada
+	# BUG fix: rango usaba `R` (relativo) en lugar de `center.y + R` (absoluto) → loop nunca iteraba.
+	for dy_p in range(cap_y + 2, center.y + R):
+		if world.in_bounds(center.x, dy_p):
+			var raw: int = world.get_tile_raw(center.x, dy_p)
+			if not _is_protected(raw):
+				world.set_tile(center.x, dy_p, T_DIRT_PATH)
+
+	# Lápidas en CLUSTERS organizados (filas paralelas, no aleatorio puro)
+	var grave_tiles := [Vector2i(4, 0), Vector2i(7, 0), Vector2i(7, 5)]
+	var placed_count: int = 0
+	# 4-6 filas verticales de tumbas a ambos lados del camino central
+	for row_i in range(4 + rng.randi() % 3):
+		var side: int = -1 if row_i % 2 == 0 else 1
+		var row_x: int = center.x + side * (2 + (row_i / 2) * 2)
+		# 5-8 lápidas en esa fila
+		var graves_in_row: int = 5 + rng.randi() % 4
+		for g_i in range(graves_in_row):
+			var gy: int = center.y + 2 - g_i + (rng.randi() % 2)
+			if not world.in_bounds(row_x, gy):
+				continue
+			# Solo si el tile no es estructura
+			var raw_g: int = world.get_tile_raw(row_x, gy)
+			if _is_structure(raw_g):
+				continue
+			# Evitar pisar la fogata central
+			if row_x == center.x and gy == center.y:
+				continue
+			world.set_tile(row_x, gy, grave_tiles[(g_i + row_i) % grave_tiles.size()])
+			placed_count += 1
+	# Algunas tumbas extra aleatorias — explicit skip de fogata ritual central
+	for _i in range(rng.randi_range(3, 7)):
+		var gx: int = center.x + rng.randi_range(-R + 2, R - 2)
+		var gy2: int = center.y + rng.randi_range(-R + 2, R - 2)
+		if not world.in_bounds(gx, gy2):
+			continue
+		if gx == center.x and gy2 == center.y:
+			continue  # no pisar la fogata ritual
+		var raw_e: int = world.get_tile_raw(gx, gy2)
+		if _is_structure(raw_e):
+			continue
+		world.set_tile(gx, gy2, grave_tiles[rng.randi() % grave_tiles.size()])
+
+
+# === Helpers ===
+
+func _build_house_v2(world: World, center: Vector2i, half: int, rng: RandomNumberGenerator, ruined: bool) -> void:
+	# Defensive: clamp half para evitar 1x1 houses con door = wall = mismo tile.
+	half = maxi(1, half)
+	# Casa con muros adobe + interior crema. Si ruined=true, ~35% de muros faltan (look quemado).
+	for dy in range(-half, half + 1):
+		for dx in range(-half, half + 1):
+			var x: int = center.x + dx
+			var y: int = center.y + dy
+			if not world.in_bounds(x, y):
+				continue
+			var is_wall: bool = absi(dx) == half or absi(dy) == half
+			if is_wall:
+				if ruined and rng.randf() < 0.35:
+					# Muro caído: dejar el rancho_burn tile como escombro
+					world.set_tile(x, y, Vector2i(2, 5))
+				else:
+					world.set_tile(x, y, T_ADOBE_WALL)
 			else:
 				world.set_tile(x, y, T_CREAM_FLOOR)
+	# Puerta hacia un lado aleatorio (siempre, incluso ruined)
+	var dir: int = rng.randi() % 4
+	var door_dx: int = 0
+	var door_dy: int = 0
+	match dir:
+		0: door_dy = -half
+		1: door_dx = half
+		2: door_dy = half
+		3: door_dx = -half
+	var dx_pos: int = center.x + door_dx
+	var dy_pos: int = center.y + door_dy
+	if world.in_bounds(dx_pos, dy_pos):
+		world.set_tile(dx_pos, dy_pos, T_DIRT_PATH)
+	# Para casas grandes (half=2), agregar un anexo pequeño al lado
+	if half >= 2 and not ruined and rng.randf() < 0.5:
+		var annex_side: int = rng.randi() % 4
+		var ax: int = center.x
+		var ay: int = center.y
+		match annex_side:
+			0: ay -= half + 2
+			1: ax += half + 2
+			2: ay += half + 2
+			3: ax -= half + 2
+		# Pequeño 1x1 anexo (corralito)
+		if world.in_bounds(ax, ay):
+			world.set_tile(ax, ay, Vector2i(3, 5))  # alambrada como cerca
+
+
+func _draw_dirt_path(world: World, a: Vector2i, b: Vector2i) -> void:
+	# Bresenham simple, NO sobrescribe ADOBE_WALL ni POI tiles
+	var x0: int = a.x; var y0: int = a.y
+	var x1: int = b.x; var y1: int = b.y
+	var dx: int = absi(x1 - x0); var dy: int = absi(y1 - y0)
+	var sx: int = 1 if x0 < x1 else -1
+	var sy: int = 1 if y0 < y1 else -1
+	var err: int = dx - dy
+	var steps: int = 0
+	while (x0 != x1 or y0 != y1) and steps < 100:
+		steps += 1
+		if world.in_bounds(x0, y0):
+			var raw: int = world.get_tile_raw(x0, y0)
+			if not _is_protected(raw):
+				world.set_tile(x0, y0, T_DIRT_PATH)
+		var e2: int = 2 * err
+		if e2 > -dy: err -= dy; x0 += sx
+		if e2 < dx: err += dx; y0 += sy
+
+
+func _is_structure(raw: int) -> bool:
+	# True si el tile actual es parte de una estructura — incluye walls, floors,
+	# paths, rocas perímetro, alambradas, fogatas, monolitos (todos tiles de stamps).
+	var src: int = (raw >> 16) & 0xff
+	if src != 0:
+		return false
+	var atlas := Vector2i((raw >> 8) & 0xff, raw & 0xff)
+	return (
+		atlas == T_ADOBE_WALL
+		or atlas == T_CREAM_FLOOR
+		or atlas == T_DIRT_PATH
+		or atlas == Vector2i(6, 1)   # roca sierra (perímetros)
+		or atlas == Vector2i(3, 5)   # alambrada
+		or atlas == Vector2i(4, 5)   # fogata
+		or atlas == Vector2i(7, 5)   # monolito
+		or atlas == Vector2i(2, 5)   # rancho quemado
+		or atlas == T_WOOD_FRAME
+		or atlas == T_CAVE_ROCK
+		or atlas == T_RAILS
+	)
+
+
+func _is_protected(raw: int) -> bool:
+	# True si el path NO debe sobrescribir este tile (walls, rocas perimetrales, POIs)
+	var src: int = (raw >> 16) & 0xff
+	if src != 0:
+		return false
+	var atlas := Vector2i((raw >> 8) & 0xff, raw & 0xff)
+	return (
+		atlas == T_ADOBE_WALL
+		or atlas == Vector2i(6, 1)
+		or atlas == Vector2i(3, 5)   # alambrada
+		or atlas == Vector2i(4, 5)   # fogata
+		or atlas == Vector2i(7, 5)   # monolito
+		or atlas == T_WOOD_FRAME
+		or atlas == T_CAVE_ROCK
+		or atlas == POI_TILE[POIType.MATA_ORTIZ]
+		or atlas == POI_TILE[POIType.MISION]
+		or atlas == POI_TILE[POIType.CEMENTERIO]
+		or atlas == POI_TILE[POIType.ENTRADA_PAQUIME]
+		or atlas == POI_TILE[POIType.ENTRADA_TARAHUMARA]
+		or atlas == POI_TILE[POIType.ENTRADA_NAICA]
+	)
+
+
+func _stamp_paquime(world: World, center: Vector2i) -> void:
+	# Estampa 9x9 — ruinas con apertura SUR. Interior: piso crema con escombros aleatorios.
+	var R := 4
+	var rng := RandomNumberGenerator.new()
+	rng.seed = world.seed_value + center.x * 1217 + center.y * 4517
+	for dy in range(-R, R + 1):
+		for dx in range(-R, R + 1):
+			var x: int = center.x + dx
+			var y: int = center.y + dy
+			if not world.in_bounds(x, y):
+				continue
+			var ad: int = maxi(absi(dx), absi(dy))
+			# Esquinas del 9x9 sin pintar (ruinas)
+			if absi(dx) == R and absi(dy) == R:
+				continue
+			# ENTRADA al centro
+			if dx == 0 and dy == 0:
+				world.set_tile(x, y, POI_TILE[POIType.ENTRADA_PAQUIME])
+				continue
+			# APERTURA SUR: 3 tiles de ancho en el borde sur → dirt path
+			if ad == R and dy == R and absi(dx) <= 1:
+				world.set_tile(x, y, T_DIRT_PATH)
+				continue
+			if ad == R:
+				# Borde exterior: muros adobe (con ocasionales huecos para look ruinoso)
+				if rng.randf() < 0.10:
+					world.set_tile(x, y, T_CREAM_FLOOR)
+				else:
+					world.set_tile(x, y, T_ADOBE_WALL)
+			else:
+				# INTERIOR: piso crema con escombros adobe esparcidos (ruinas).
+				# IMPORTANTE: NO sembrar escombros en la columna dx==0 para garantizar
+				# que el corredor desde la apertura sur al centro quede libre.
+				if dx != 0 and ad <= 2 and rng.randf() < 0.18:
+					world.set_tile(x, y, T_ADOBE_WALL)  # escombro pillar
+				else:
+					world.set_tile(x, y, T_CREAM_FLOOR)
 	# Sendero de aproximación al sur (más largo)
-	for dy in range(R + 1, R + 5):
+	for dy in range(R + 1, R + 6):
 		for dx in range(-1, 2):
 			var px: int = center.x + dx
 			var py: int = center.y + dy
@@ -463,7 +983,7 @@ func _stamp_paquime(world: World, center: Vector2i) -> void:
 
 
 func _stamp_tarahumara(world: World, center: Vector2i) -> void:
-	# Estampa 9x9 — formación rocosa con boca de cueva oscura, abertura al sur
+	# Estampa 9x9 — formación rocosa con boca de cueva oscura, abertura al sur + sendero
 	var R := 4
 	for dy in range(-R, R + 1):
 		for dx in range(-R, R + 1):
@@ -471,8 +991,10 @@ func _stamp_tarahumara(world: World, center: Vector2i) -> void:
 			var y: int = center.y + dy
 			if not world.in_bounds(x, y):
 				continue
-			# La parte sur (la boca) deja salida
+			# Apertura sur — pintar shadow para garantizar transitable (no `continue`,
+			# si no se quedaba con el bioma de abajo que podía ser BARRANCA/PICO).
 			if dy == R and absi(dx) <= 1:
+				world.set_tile(x, y, T_CAVE_SHADOW)
 				continue
 			if dy == R - 1 and absi(dx) <= 1:
 				world.set_tile(x, y, T_CAVE_SHADOW)
@@ -483,10 +1005,17 @@ func _stamp_tarahumara(world: World, center: Vector2i) -> void:
 				world.set_tile(x, y, T_CAVE_ROCK)
 			else:
 				world.set_tile(x, y, T_CAVE_SHADOW)
+	# Sendero de aproximación al sur (faltaba — como Paquimé/Naica)
+	for dy2 in range(R + 1, R + 6):
+		for ddx in range(-1, 2):
+			var px: int = center.x + ddx
+			var py: int = center.y + dy2
+			if world.in_bounds(px, py):
+				world.set_tile(px, py, T_DIRT_PATH)
 
 
 func _stamp_naica(world: World, center: Vector2i) -> void:
-	# Estampa 9x9 — marco grueso de madera + rieles internos + entrada central
+	# Estampa 9x9 — marco simple de madera + rieles internos + apertura SUR + entrada centro
 	var R := 4
 	for dy in range(-R, R + 1):
 		for dx in range(-R, R + 1):
@@ -498,16 +1027,22 @@ func _stamp_naica(world: World, center: Vector2i) -> void:
 			# Esquinas exteriores libres
 			if absi(dx) == R and absi(dy) == R:
 				continue
+			# ENTRADA centro
 			if dx == 0 and dy == 0:
 				world.set_tile(x, y, POI_TILE[POIType.ENTRADA_NAICA])
-			elif ad == R:
-				world.set_tile(x, y, T_WOOD_FRAME)
-			elif ad == R - 1:
+				continue
+			# APERTURA SUR (3 tiles) → rails para que se pueda entrar caminando
+			if ad == R and dy == R and absi(dx) <= 1:
+				world.set_tile(x, y, T_RAILS)
+				continue
+			# Borde: marco de madera simple
+			if ad == R:
 				world.set_tile(x, y, T_WOOD_FRAME)
 			else:
+				# Interior completamente rails (transitable)
 				world.set_tile(x, y, T_RAILS)
-	# Rieles extendiéndose al sur 5 tiles
-	for dy2 in range(R + 1, R + 6):
+	# Rieles extendiéndose al sur 6 tiles
+	for dy2 in range(R + 1, R + 7):
 		for dx in range(-1, 2):
 			var px: int = center.x + dx
 			var py: int = center.y + dy2
@@ -564,20 +1099,3 @@ func _find_passable_near(world: World, center: Vector2i, radius: int) -> Vector2
 	return best
 
 
-func _find_random_in_any_of(world: World, biomes_ok: Array, existing: Array, min_dist: int, rng: RandomNumberGenerator) -> Vector2i:
-	for _i in range(400):
-		var x: int = rng.randi_range(5, world.width - 6)
-		var y: int = rng.randi_range(5, world.height - 6)
-		if not biomes_ok.has(world.get_biome(x, y)):
-			continue
-		var ok: bool = true
-		for p in existing:
-			var pp: POI = p
-			var dx: int = x - pp.pos.x
-			var dy: int = y - pp.pos.y
-			if dx * dx + dy * dy < min_dist * min_dist:
-				ok = false
-				break
-		if ok:
-			return Vector2i(x, y)
-	return Vector2i(-1, -1)

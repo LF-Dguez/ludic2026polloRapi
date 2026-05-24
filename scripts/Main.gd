@@ -39,6 +39,11 @@ const IMPASSABLE_OVERWORLD := [
 	(0 << 16) | (1 << 8) | 2,   # barranca abismo
 	(0 << 16) | (6 << 8) | 2,   # río
 	(0 << 16) | (0 << 8) | 5,   # pico (no escalable)
+	# Stamps: paredes/rocas impasables
+	(0 << 16) | (0 << 8) | 4,   # T_ADOBE_WALL — muros de casas/iglesias
+	(0 << 16) | (3 << 8) | 4,   # T_CAVE_ROCK — boca de cueva Tarahumara
+	(0 << 16) | (5 << 8) | 4,   # T_WOOD_FRAME — marco de mina Naica
+	(0 << 16) | (6 << 8) | 1,   # roca sierra — perímetro cementerio
 ]
 
 const IMPASSABLE_PAQUIME := [
@@ -79,6 +84,9 @@ var dungeon  # BSPGenerator.Dungeon
 var cave  # CaveGenerator.Cave
 var mine  # MineGenerator.Mine
 
+# Guard contra regeneraciones concurrentes (spam de R)
+var regenerating: bool = false
+
 var saved_overworld_tile: Vector2i = Vector2i.ZERO
 var active_dungeon_poi: Variant = null
 
@@ -111,8 +119,8 @@ func _ready() -> void:
 	player.dungeon_layer = dungeon_layer
 	player.cave_layer = cave_layer
 	player.mines_layer = mines_layer
-	player.impassable_overworld = IMPASSABLE_OVERWORLD
-	player.impassable_dungeon = IMPASSABLE_PAQUIME
+	# (Player ya no usa estos arrays — collision via _is_impassable_overworld_explicit
+	# y whitelist hardcoded por mode. Constants quedan acá como documentación.)
 	randomize()
 	_regenerate_overworld()
 	# Auto-tour DISABLED — solo se activa con F12 manualmente para capturar screenshots
@@ -170,19 +178,6 @@ func _build_overworld_tileset() -> TileSet:
 	return ts
 
 
-func _build_simple_tileset(res_path: String, cols: int, rows: int, tile_px: int) -> TileSet:
-	var ts := TileSet.new()
-	ts.tile_size = Vector2i(tile_px, tile_px)
-	var src := TileSetAtlasSource.new()
-	src.texture = _load_texture(res_path)
-	src.texture_region_size = Vector2i(tile_px, tile_px)
-	for x in range(cols):
-		for y in range(rows):
-			src.create_tile(Vector2i(x, y))
-	ts.add_source(src, 0)
-	return ts
-
-
 func _build_dual_tileset(wall_path: String, wall_cols: int, wall_rows: int,
 		floor_path: String, floor_cols: int, floor_rows: int, tile_px: int) -> TileSet:
 	var ts := TileSet.new()
@@ -217,6 +212,9 @@ func _load_texture(res_path: String) -> Texture2D:
 # ============ OVERWORLD ============
 
 func _regenerate_overworld() -> void:
+	if regenerating:
+		return  # guard contra spam de R durante async
+	regenerating = true
 	mode = Mode.OVERWORLD
 	overworld_layer.visible = true
 	dungeon_layer.visible = false
@@ -225,6 +223,7 @@ func _regenerate_overworld() -> void:
 	dark_bg.visible = false
 	canvas_modulate.color = Color(1, 1, 1, 1)  # luz natural
 	player_light.enabled = false
+	player.passable_decor = {}  # overworld no usa el dict
 	player.set_mode(Mode.OVERWORLD)
 
 	info.text = "Generando mundo de %dx%d tiles..." % [MAP_W, MAP_H]
@@ -241,7 +240,7 @@ func _regenerate_overworld() -> void:
 
 	var spawn_tile: Vector2i = _find_first_poi(OverworldScript.POIType.MATA_ORTIZ)
 	if spawn_tile == Vector2i(-1, -1):
-		spawn_tile = Vector2i(MAP_W / 2, MAP_H / 2)
+		spawn_tile = _find_safe_spawn(Vector2i(MAP_W / 2, MAP_H / 2))
 	player.set_tile_position(spawn_tile)
 	# Renderiza minimap con el nuevo mundo
 	minimap.render(world)
@@ -249,6 +248,32 @@ func _regenerate_overworld() -> void:
 	minimap_hint.visible = true
 	_update_hud(t_gen, t_paint)
 	_save_screenshot("overworld")
+	regenerating = false
+
+
+func _find_safe_spawn(origin: Vector2i) -> Vector2i:
+	# Spiral outward desde origin buscando un tile transitable (no río/barranca/pico).
+	var max_r: int = maxi(MAP_W, MAP_H)
+	for r in range(0, max_r):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if absi(dx) != r and absi(dy) != r:
+					continue
+				var x: int = origin.x + dx
+				var y: int = origin.y + dy
+				if x < 4 or x >= MAP_W - 4 or y < 4 or y >= MAP_H - 4:
+					continue
+				if not world.in_bounds(x, y):
+					continue
+				var b: int = world.get_biome(x, y)
+				if b == OverworldScript.Biome.RIO:
+					continue
+				if b == OverworldScript.Biome.BARRANCA:
+					continue
+				if b == OverworldScript.Biome.PICO:
+					continue
+				return Vector2i(x, y)
+	return origin
 
 
 func _paint_overworld(w) -> void:
@@ -386,11 +411,13 @@ func _paint_cave(c) -> void:
 			if c.walls[y * c.width + x] == 1:
 				var v: Vector2i = CaveScript.get_tile_for(c, x, y)
 				cave_layer.set_cell(Vector2i(x, y), 0, v)
-	# Pase 3: scatter (rocas sueltas sobre piso, sobreponen al floor)
+	# Pase 3: scatter sobre piso — marca passable_decor para que el jugador pueda caminar
+	player.passable_decor = {}
 	for k in c.floor_scatter.keys():
 		var pos: Vector2i = k
 		var atlas: Vector2i = c.floor_scatter[k]
 		cave_layer.set_cell(pos, 0, atlas)
+		player.passable_decor[pos] = true
 
 
 # ============ NAICA MINE ============
@@ -440,11 +467,18 @@ func _paint_mine(m) -> void:
 			if m.walls[y * m.width + x] == 1:
 				var v: Vector2i = MineScript.get_tile_for(m, x, y)
 				mines_layer.set_cell(Vector2i(x, y), 0, v)
-	# Pase 3: Decoraciones
+	# Pase 3: Decoraciones SOLO en celdas piso, marcadas como passable_decor
+	player.passable_decor = {}
 	for k in m.decor.keys():
 		var pos: Vector2i = k
+		# Skip si por algún bug cayó en wall
+		if pos.x < 0 or pos.x >= m.width or pos.y < 0 or pos.y >= m.height:
+			continue
+		if m.walls[pos.y * m.width + pos.x] == 1:
+			continue  # no pintar decor sobre walls
 		var atlas: Vector2i = m.decor[k]
 		mines_layer.set_cell(pos, 0, atlas)
+		player.passable_decor[pos] = true
 
 
 # ============ EXIT ============
@@ -458,11 +492,14 @@ func _exit_to_overworld() -> void:
 	dark_bg.visible = false
 	canvas_modulate.color = Color(1, 1, 1, 1)
 	player_light.enabled = false
+	player.passable_decor = {}
 	minimap.visible = true
 	minimap_hint.visible = true
 	player.set_mode(Mode.OVERWORLD)
-	player.set_tile_position(saved_overworld_tile)
-	player.position.y += TILE_DISPLAY
+	# Salir al sur de la entrada — pero si esa celda es impasable, spiral search.
+	var target := saved_overworld_tile + Vector2i(0, 1)
+	target = _find_safe_spawn(target)
+	player.set_tile_position(target)
 	_update_hud(0, 0)
 
 
@@ -526,8 +563,14 @@ func _update_prompt() -> void:
 			prompt.text = "[SPACE] Salir al overworld"
 		else:
 			prompt.text = ""
-	else:
-		# CAVE / MINE: salir si estamos cerca del exit
+	elif mode == Mode.CAVE_TARAHUMARA or mode == Mode.MINE_NAICA:
+		# null-safe (en transición puede no haber cave/mine todavía)
+		if mode == Mode.CAVE_TARAHUMARA and cave == null:
+			prompt.text = ""
+			return
+		if mode == Mode.MINE_NAICA and mine == null:
+			prompt.text = ""
+			return
 		var t: Vector2i = player.get_current_tile()
 		var ex: Vector2i = cave.exit_pos if mode == Mode.CAVE_TARAHUMARA else mine.exit_pos
 		var dx: int = t.x - ex.x
@@ -544,7 +587,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_SPACE:
 				_handle_interact()
 			KEY_R:
-				if mode == Mode.OVERWORLD:
+				if mode == Mode.OVERWORLD and not regenerating:
 					_regenerate_overworld()
 			KEY_BACKSPACE:
 				if mode != Mode.OVERWORLD:
@@ -558,7 +601,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				camera.zoom *= 1.18
 				_clamp_zoom()
 			KEY_M:
-				_toggle_minimap()
+				# Solo togglear minimap en overworld (oculto en dungeons)
+				if mode == Mode.OVERWORLD:
+					_toggle_minimap()
 			KEY_F12:
 				if mode == Mode.OVERWORLD:
 					_auto_tour()
@@ -588,8 +633,12 @@ func _handle_interact() -> void:
 		var atlas2: Vector2i = player.get_current_atlas()
 		if atlas2 == BSPScript.T_EXIT:
 			_exit_to_overworld()
-	else:
-		# CAVE / MINE: salir si cerca de exit
+	elif mode == Mode.CAVE_TARAHUMARA or mode == Mode.MINE_NAICA:
+		# Salir si cerca de exit (null-safe)
+		if mode == Mode.CAVE_TARAHUMARA and cave == null:
+			return
+		if mode == Mode.MINE_NAICA and mine == null:
+			return
 		var t: Vector2i = player.get_current_tile()
 		var ex: Vector2i = cave.exit_pos if mode == Mode.CAVE_TARAHUMARA else mine.exit_pos
 		var dx: int = t.x - ex.x
@@ -609,22 +658,31 @@ func _toggle_minimap() -> void:
 
 
 func _apply_minimap_size() -> void:
+	# Usa viewport real (no hardcode 1280/720) por si la ventana cambia
+	var vp: Vector2 = get_viewport_rect().size
 	if minimap_large:
 		minimap.size = MINI_LARGE
-		minimap.position = Vector2((1280 - MINI_LARGE.x) / 2, (720 - MINI_LARGE.y) / 2)
+		minimap.position = Vector2((vp.x - MINI_LARGE.x) / 2, (vp.y - MINI_LARGE.y) / 2)
 		minimap_hint.text = "[M] minimapa chico"
 		minimap_hint.position = Vector2(minimap.position.x, minimap.position.y + MINI_LARGE.y + 4)
 	else:
 		minimap.size = MINI_SMALL
-		minimap.position = Vector2(1280 - MINI_SMALL.x - 10, 100)
+		minimap.position = Vector2(vp.x - MINI_SMALL.x - 10, 100)
 		minimap_hint.text = "[M] agrandar minimapa"
-		minimap_hint.position = Vector2(1280 - MINI_SMALL.x - 10, 100 + MINI_SMALL.y + 4)
+		minimap_hint.position = Vector2(vp.x - MINI_SMALL.x - 10, 100 + MINI_SMALL.y + 4)
+	minimap.queue_redraw()
 
 
 func _save_screenshot(shot_name: String) -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var img := get_viewport().get_texture().get_image()
-	var dir_path := ProjectSettings.globalize_path("res://screenshots")
-	DirAccess.make_dir_recursive_absolute(dir_path)
-	img.save_png(dir_path + "/%s.png" % shot_name)
+	# Preferir user:// para que funcione en exports (no solo editor); fallback a res://
+	var dir_path := ProjectSettings.globalize_path("user://screenshots")
+	var mk_err: int = DirAccess.make_dir_recursive_absolute(dir_path)
+	if mk_err != OK:
+		dir_path = ProjectSettings.globalize_path("res://screenshots")
+		DirAccess.make_dir_recursive_absolute(dir_path)
+	var save_err: int = img.save_png(dir_path + "/%s.png" % shot_name)
+	if save_err != OK:
+		push_warning("Screenshot save failed: %s/%s.png err=%d" % [dir_path, shot_name, save_err])

@@ -17,11 +17,12 @@ var dungeon_layer: TileMapLayer
 var cave_layer: TileMapLayer
 var mines_layer: TileMapLayer
 
-var mode_overworld: bool = true  # legacy bool
 var mode: int = 0  # Mode enum (definido en Main.gd) — 0=overworld, 1=paquime, 2=cave, 3=mine
 
-var impassable_overworld: Array = []   # encoded ints
-var impassable_dungeon: Array = []     # Vector2i atlas coords (single source)
+# Set of tile positions con decoración transitable (cave/mine modes).
+# Main.gd lo popula al pintar floor_scatter/decor para evitar que tiles
+# decorativos pintados en src 0 (atlas walls) bloqueen al jugador.
+var passable_decor: Dictionary = {}  # Vector2i → bool
 
 
 func _ready() -> void:
@@ -35,7 +36,6 @@ func _ready() -> void:
 
 func set_mode(new_mode: int) -> void:
 	mode = new_mode
-	mode_overworld = (new_mode == 0)
 
 
 func _current_layer() -> TileMapLayer:
@@ -57,12 +57,18 @@ func _process(delta: float) -> void:
 		return
 	dir = dir.normalized()
 	var step := dir * SPEED * delta
-	var nx := position + Vector2(step.x, 0)
-	if _can_stand_at(nx):
-		position.x = nx.x
-	var ny := position + Vector2(0, step.y)
-	if _can_stand_at(ny):
-		position.y = ny.y
+	# SUBSTEPPING: si step > HALF_HITBOX, dividir en chunks para evitar tunneling a low FPS
+	var max_chunk: float = float(HALF_HITBOX)
+	var step_len: float = step.length()
+	var num_substeps: int = maxi(1, int(ceil(step_len / max_chunk)))
+	var sub_step: Vector2 = step / float(num_substeps)
+	for _i in range(num_substeps):
+		var nx := position + Vector2(sub_step.x, 0)
+		if _can_stand_at(nx):
+			position.x = nx.x
+		var ny := position + Vector2(0, sub_step.y)
+		if _can_stand_at(ny):
+			position.y = ny.y
 
 
 func _can_stand_at(pos: Vector2) -> bool:
@@ -83,24 +89,64 @@ func _can_stand_at(pos: Vector2) -> bool:
 		var src_id: int = layer.get_cell_source_id(Vector2i(tx, ty))
 		var atlas: Vector2i = layer.get_cell_atlas_coords(Vector2i(tx, ty))
 		if mode == 0:
-			# Overworld: cualquier tile con tile válido es transitable salvo lista
+			# Overworld
 			if src_id == -1:
-				return false  # fuera del mapa pintado
-			var encoded: int = (src_id << 16) | (atlas.x << 8) | atlas.y
-			if encoded in impassable_overworld:
+				return false
+			# Chequeo explícito por (src_id, atlas.x, atlas.y) en vez de `in` para evitar
+			# weirdness de Variant comparison.
+			if _is_impassable_overworld_explicit(src_id, atlas):
 				return false
 		elif mode == 1:
-			# Paquimé: lista de Vector2i atlas
-			if atlas == Vector2i(-1, -1):
+			# Paquimé: src 0 = atlas paquime. WHITELIST de tiles passable;
+			# todo lo demás src 0 (incluyendo T_WALL/T_WATER/T_VOID y cualquier
+			# decoración tipo-pared) es impasable.
+			if src_id == -1:
 				return false
-			if atlas in impassable_dungeon:
-				return false
+			if src_id == 0:
+				var ax: int = atlas.x
+				var ay: int = atlas.y
+				var passable: bool = (
+					(ax == 1 and ay == 0) or  # T_FLOOR
+					(ax == 3 and ay == 0) or  # T_DOOR
+					(ax == 0 and ay == 1) or  # T_PLAZA
+					(ax == 1 and ay == 1) or  # T_MACAW
+					(ax == 2 and ay == 1) or  # T_WORKSHOP
+					(ax == 0 and ay == 2) or  # T_EFFIGY_CROSS
+					(ax == 1 and ay == 2) or  # T_EFFIGY_BIRD
+					(ax == 2 and ay == 2) or  # T_EFFIGY_SERPENT
+					(ax == 3 and ay == 2) or  # T_BALL
+					(ax == 0 and ay == 3) or  # T_ENTRANCE
+					(ax == 1 and ay == 3) or  # T_EXIT
+					(ax == 2 and ay == 3)     # T_POT
+				)
+				if not passable:
+					return false
 		else:
-			# Cave/Mine: tile pintado = wall (impasable); no tile = piso (transitable)
-			if src_id != -1:
-				return false  # hay tile → es roca/wall
-			# else: piso (no tile), pasamos
+			# Cave/Mine: src 0 = wall salvo decor explícito en passable_decor
+			if src_id == -1:
+				return false
+			if src_id == 0:
+				if passable_decor.has(Vector2i(tx, ty)):
+					continue  # decoración sobre piso, transitable
+				return false
 	return true
+
+
+func _is_impassable_overworld_explicit(src_id: int, atlas: Vector2i) -> bool:
+	# Source 0 (overworld atlas)
+	if src_id == 0:
+		# Barranca borde (0,2), abismo (1,2), río (6,2), pico (0,5)
+		if atlas.x == 0 and atlas.y == 2: return true
+		if atlas.x == 1 and atlas.y == 2: return true
+		if atlas.x == 6 and atlas.y == 2: return true
+		if atlas.x == 0 and atlas.y == 5: return true
+		# Stamps: adobe wall (0,4), cave rock (3,4), wood frame (5,4), roca sierra (6,1)
+		if atlas.x == 0 and atlas.y == 4: return true  # ADOBE_WALL
+		if atlas.x == 3 and atlas.y == 4: return true  # CAVE_ROCK
+		if atlas.x == 5 and atlas.y == 4: return true  # WOOD_FRAME
+		if atlas.x == 6 and atlas.y == 1: return true  # SIERRA_ROCA
+	# Source 1 (desert atlas) — todos pasables por default
+	return false
 
 
 func get_current_tile() -> Vector2i:

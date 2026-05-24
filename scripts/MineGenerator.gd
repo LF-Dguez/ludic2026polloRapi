@@ -84,13 +84,20 @@ func generate(w: int, h: int, seed_value: int) -> Mine:
 	# === SET PIECE: CÁMARA DE CRISTALES al sur ===
 	var crystal_cx: int = w / 2
 	var crystal_cy: int = int(h * 0.8)
-	var crystal_r: int = mini(w, h) / 4
+	# Clamp crystal_r para que el chamber no salga del mapa
+	var crystal_r: int = mini(mini(w, h) / 4, mini(crystal_cx - 3, mini(w - crystal_cx - 3, h - crystal_cy - 3)))
+	crystal_r = maxi(4, crystal_r)
 	_carve_chamber(mine, crystal_cx, crystal_cy, crystal_r, 0.3)
-	mine.crystal_chamber = Rect2i(crystal_cx - crystal_r, crystal_cy - crystal_r, crystal_r * 2, crystal_r * 2)
+	mine.crystal_chamber = Rect2i(
+		maxi(0, crystal_cx - crystal_r),
+		maxi(0, crystal_cy - crystal_r),
+		mini(crystal_r * 2, w),
+		mini(crystal_r * 2, h)
+	)
 
 	# === ENTRADA: vestíbulo al norte ===
 	var entry_x: int = w / 2
-	var entry_y: int = int(h * 0.10)
+	var entry_y: int = maxi(2, int(h * 0.10))  # clamp para no pisar el borde
 	_carve_chamber(mine, entry_x, entry_y, 4, 0.2)
 
 	# === POZO PRINCIPAL: corredor recto del vestíbulo a la cámara ===
@@ -100,31 +107,31 @@ func generate(w: int, h: int, seed_value: int) -> Mine:
 			if x > 0 and x < w - 1:
 				mine.set_wall(x, y, 0)
 		# Asegurar conexión con cámara
-		if y > crystal_cy - crystal_r and abs(y - crystal_cy) <= crystal_r:
+		if y > crystal_cy - crystal_r and absi(y - crystal_cy) <= crystal_r:
 			for dx in range(-3, 4):
 				var x: int = entry_x + dx
 				if x > 0 and x < w - 1:
 					mine.set_wall(x, y, 0)
 
-	# === RAMAS LATERALES: 4 túneles que salen del pozo principal ===
-	var branch_ys: Array[int] = [
-		entry_y + 8,
-		entry_y + 18,
-		entry_y + 28,
-		entry_y + 38,
-	]
+	# === RAMAS LATERALES proporcionales al tamaño del shaft ===
+	var shaft_h: int = crystal_cy - entry_y
+	var num_branches: int = clampi(shaft_h / 10, 1, 6)
+	var branch_ys: Array[int] = []
+	for i in range(num_branches):
+		branch_ys.append(entry_y + int(shaft_h * (i + 1) / float(num_branches + 1)))
 	for by in branch_ys:
 		if by >= crystal_cy - 4:
 			continue
-		# Rama izquierda
-		var ex_l: int = rng.randi_range(5, entry_x - 8)
-		_carve_corridor(mine, Vector2i(entry_x - 2, by), Vector2i(ex_l, by), 1)
-		# Pequeño depósito al final
-		_carve_chamber(mine, ex_l, by, 3 + rng.randi() % 2, 0.2)
-		# Rama derecha
-		var ex_r: int = rng.randi_range(entry_x + 8, w - 5)
-		_carve_corridor(mine, Vector2i(entry_x + 2, by), Vector2i(ex_r, by), 1)
-		_carve_chamber(mine, ex_r, by, 3 + rng.randi() % 2, 0.2)
+		# Rama izquierda — guard contra randi_range con rango inválido
+		if entry_x - 8 >= 5:
+			var ex_l: int = rng.randi_range(5, entry_x - 8)
+			_carve_corridor(mine, Vector2i(entry_x - 2, by), Vector2i(ex_l, by), 1)
+			_carve_chamber(mine, ex_l, by, 3 + rng.randi() % 2, 0.2)
+		# Rama derecha — guard
+		if entry_x + 8 <= w - 5:
+			var ex_r: int = rng.randi_range(entry_x + 8, w - 5)
+			_carve_corridor(mine, Vector2i(entry_x + 2, by), Vector2i(ex_r, by), 1)
+			_carve_chamber(mine, ex_r, by, 3 + rng.randi() % 2, 0.2)
 
 	# Bordes wall
 	for x in range(w):
@@ -148,12 +155,13 @@ func generate(w: int, h: int, seed_value: int) -> Mine:
 		var cy: int = crystal_cy + rng.randi_range(-crystal_r + 2, crystal_r - 2)
 		if not mine.is_wall(cx, cy):
 			mine.decor[Vector2i(cx, cy)] = T_CRYSTAL_BIG if rng.randf() < 0.6 else T_CRYSTAL_SMALL
-	# Mine carts en el pozo principal
-	for _i in range(3):
-		var dy: int = rng.randi_range(entry_y + 5, crystal_cy - 5)
-		var dx: int = entry_x + rng.randi_range(-1, 1)
-		if not mine.is_wall(dx, dy):
-			mine.decor[Vector2i(dx, dy)] = T_MINE_CART
+	# Mine carts en el pozo principal — guard contra rango inválido en mapas chicos
+	if crystal_cy - 5 > entry_y + 5:
+		for _i in range(3):
+			var dy: int = rng.randi_range(entry_y + 5, crystal_cy - 5)
+			var dx: int = entry_x + rng.randi_range(-1, 1)
+			if not mine.is_wall(dx, dy):
+				mine.decor[Vector2i(dx, dy)] = T_MINE_CART
 	# Linternas dispersas
 	for _i in range(8):
 		var ly: int = rng.randi_range(entry_y, crystal_cy)

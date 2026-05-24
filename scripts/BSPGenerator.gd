@@ -228,13 +228,25 @@ func _tag_rooms() -> void:
 				dist[nb] = dist[cur] + 1
 				q.append(nb)
 
-	# Salida = más lejano
-	var exit_idx: int = 0
-	var max_d: int = -1
+	# Salida = más lejano alcanzable (init max_d=0 evita exit=entrance si grafo disconnect)
+	var exit_idx: int = entrance_idx
+	var max_d: int = 0
 	for i in range(n):
 		if dist[i] > max_d:
 			max_d = dist[i]
 			exit_idx = i
+	# Si no se alcanzó ningún cuarto distinto (grafo desconectado), exit = cuarto más
+	# lejano por distancia euclidiana — al menos no será el mismo
+	if exit_idx == entrance_idx:
+		var best_eu: int = 0
+		for i in range(n):
+			if i == entrance_idx:
+				continue
+			var ec: Vector2i = d.rooms[i].position - d.rooms[entrance_idx].position
+			var eu: int = ec.x * ec.x + ec.y * ec.y
+			if eu > best_eu:
+				best_eu = eu
+				exit_idx = i
 
 	d.room_tags[entrance_idx] = "entrance"
 	d.room_tags[exit_idx] = "exit"
@@ -266,16 +278,15 @@ func _tag_rooms() -> void:
 	if ball_idx != -1:
 		d.room_tags[ball_idx] = "ball"
 
-	# 2 jaulas de macaw (medianos)
+	# 2 jaulas de macaw — determinístico (sin RNG gate que podía fallar todos)
 	var macaws: int = 0
 	for i in by_area:
 		if d.room_tags[i] != "dwelling":
 			continue
 		if macaws >= 2:
 			break
-		if rng.randf() < 0.5:
-			d.room_tags[i] = "macaw"
-			macaws += 1
+		d.room_tags[i] = "macaw"
+		macaws += 1
 
 	# 1 taller de cobre
 	for i in by_area:
@@ -353,11 +364,13 @@ func _decorate_rooms() -> void:
 					if d.get_tile(px2, py2) == T_FLOOR:
 						d.set_tile(px2, py2, T_MACAW)
 			"water":
-				# Charco central de agua
-				var pad: int = 2
-				for x in range(r.position.x + pad, r.position.x + r.size.x - pad):
-					for y in range(r.position.y + pad, r.position.y + r.size.y - pad):
-						d.set_tile(x, y, T_WATER)
+				# Charco central — leave ≥1-tile floor border alrededor para que el
+				# jugador no quede atrapado entrando por la puerta.
+				var pad: int = 3  # antes 2 — ahora 3 garantiza ring de floor
+				if r.size.x > pad * 2 + 1 and r.size.y > pad * 2 + 1:
+					for x in range(r.position.x + pad, r.position.x + r.size.x - pad):
+						for y in range(r.position.y + pad, r.position.y + r.size.y - pad):
+							d.set_tile(x, y, T_WATER)
 
 
 func _place_doors() -> void:
@@ -386,12 +399,26 @@ func _place_doors() -> void:
 func _maybe_door_at(inner_x: int, inner_y: int, outer_x: int, outer_y: int) -> void:
 	if outer_x < 0 or outer_x >= d.width or outer_y < 0 or outer_y >= d.height:
 		return
-	# El interior debe ser un floor de cuarto. El exterior es el corredor (también FLOOR).
-	# Cuando ambos son floor → la transición es la puerta T en el TILE INTERIOR borde.
 	var inner: Vector2i = d.get_tile(inner_x, inner_y)
 	var outer: Vector2i = d.get_tile(outer_x, outer_y)
-	if _is_floor(outer) and (inner == T_FLOOR or inner == T_PLAZA or inner == T_BALL):
-		d.set_tile(inner_x, inner_y, T_DOOR)
+	if not _is_floor(outer):
+		return
+	if not (inner == T_FLOOR or inner == T_PLAZA or inner == T_BALL):
+		return
+	# Solo placement si es una junction de 1 tile (no a lo largo de corridor paralelo).
+	# Verifica que los vecinos del OUTER en el eje perpendicular sean WALL — si no, el
+	# corredor corre paralelo a la pared y crearía hilera de puertas.
+	var dx: int = outer_x - inner_x
+	var dy: int = outer_y - inner_y
+	var perp_dx: int = -dy
+	var perp_dy: int = dx
+	for sign in [-1, 1]:
+		var nx: int = outer_x + perp_dx * sign
+		var ny: int = outer_y + perp_dy * sign
+		if nx >= 0 and nx < d.width and ny >= 0 and ny < d.height:
+			if _is_floor(d.get_tile(nx, ny)):
+				return  # corredor paralelo → no puerta
+	d.set_tile(inner_x, inner_y, T_DOOR)
 
 
 func _is_floor(t: Vector2i) -> bool:
