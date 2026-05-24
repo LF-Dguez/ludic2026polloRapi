@@ -59,8 +59,10 @@ func setup(b_id: String) -> void:
 func _ready() -> void:
 	add_to_group("boss_chest")
 	z_index = 7
-	# Sprite procedural
-	_sprite = _build_chest_sprite()
+	# Intenta cargar art/tiles/cofre.png — fallback a sprite procedural
+	_sprite = _try_load_cofre_sprite()
+	if _sprite == null:
+		_sprite = _build_chest_sprite()
 	add_child(_sprite)
 	# Luz dorada parpadeante (para hacerlo bien visible en la penumbra)
 	_light = PointLight2D.new()
@@ -78,6 +80,26 @@ func _ready() -> void:
 	col.shape = shape
 	add_child(col)
 	_player = get_tree().get_first_node_in_group("player")
+
+
+func _try_load_cofre_sprite() -> Sprite2D:
+	var path := "res://art/tiles/cofre.png"
+	var abs_path := ProjectSettings.globalize_path(path)
+	if not FileAccess.file_exists(path):
+		return null
+	var img := Image.load_from_file(abs_path)
+	if img == null:
+		return null
+	var tex := ImageTexture.create_from_image(img)
+	var spr := Sprite2D.new()
+	spr.texture = tex
+	spr.centered = true
+	# Auto-scale: si el sprite es < 64px, scale 2 para display ~128px
+	var w: int = tex.get_width()
+	var target: float = 96.0
+	var scale_factor: float = target / float(maxi(w, 1))
+	spr.scale = Vector2(scale_factor, scale_factor)
+	return spr
 
 
 func _build_chest_sprite() -> Sprite2D:

@@ -648,11 +648,10 @@ func _enter_paquime_dungeon(poi) -> void:
 	player.set_tile_position(entrance_tile)
 	_clear_enemies()
 	_spawn_enemies_paquime(dungeon)
-	# Boss en el cuarto exit — solo si dungeon no está cleared
-	if not cleared_dungeons.has(poi.pos):
-		var exit_tile: Vector2i = _find_first_tile_in_dungeon(BSPScript.T_EXIT)
-		if exit_tile != Vector2i(-1, -1):
-			_spawn_boss("senor_paquime", exit_tile, dungeon_layer, 1)
+	# Boss en el cuarto exit — siempre respawna (roguelike)
+	var exit_tile: Vector2i = _find_first_tile_in_dungeon(BSPScript.T_EXIT)
+	if exit_tile != Vector2i(-1, -1):
+		_spawn_boss("senor_paquime", exit_tile, dungeon_layer, 1)
 	_update_hud(t_gen, t_paint)
 	await _save_screenshot("dungeon_paquime")
 
@@ -729,8 +728,7 @@ func _enter_cave_dungeon(poi) -> void:
 	player.set_tile_position(cave.spawn)
 	_clear_enemies()
 	_spawn_enemies_cave(cave)
-	if not cleared_dungeons.has(poi.pos):
-		_spawn_boss("bestia_cobre", cave.exit_pos, cave_layer, 2)
+	_spawn_boss("bestia_cobre", cave.exit_pos, cave_layer, 2)
 	_update_hud(t_gen, t_paint)
 	await _save_screenshot("dungeon_cave")
 
@@ -798,8 +796,7 @@ func _enter_mine_dungeon(poi) -> void:
 	player.set_tile_position(mine.spawn)
 	_clear_enemies()
 	_spawn_enemies_mine(mine)
-	if not cleared_dungeons.has(poi.pos):
-		_spawn_boss("espectro_cristal", mine.exit_pos, mines_layer, 3)
+	_spawn_boss("espectro_cristal", mine.exit_pos, mines_layer, 3)
 	_update_hud(t_gen, t_paint)
 	await _save_screenshot("dungeon_mine")
 
