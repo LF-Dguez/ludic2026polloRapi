@@ -10,9 +10,15 @@ const EFFECTIVE_TILE := 32
 # para mejor feel al caminar entre obstáculos y pegado a paredes.
 const HALF_HITBOX := 6
 
-@export var sprite_path: String = "res://art/tiles/player.png"
+@export var sprite_path: String = "res://art/tiles/principal.png"
 
-var sprite: Sprite2D
+const FRAME_W := 48
+const FRAME_H := 64
+const ANIM_FPS := 8.0
+const ANIMS := ["walk_down", "walk_left", "walk_right", "walk_up"]
+
+var sprite: AnimatedSprite2D
+var current_anim: String = "walk_down"
 
 var overworld_layer: TileMapLayer
 var overworld_decor_layer: TileMapLayer
@@ -33,23 +39,47 @@ var tree_blocked_tiles: Dictionary = {}  # Vector2i → bool
 
 func _ready() -> void:
 	var img := Image.load_from_file(ProjectSettings.globalize_path(sprite_path))
-	var tex: Texture2D = null
-	if img != null:
-		tex = ImageTexture.create_from_image(img)
-	# Outline sprite — silhouette negra ligeramente mayor para contraste sutil
-	# (antes scale 1.14 + alpha 0.85 → halo demasiado oscuro).
-	var outline := Sprite2D.new()
-	outline.texture = tex
+	if img == null:
+		push_error("Player: no pude cargar %s" % sprite_path)
+		return
+	var tex := ImageTexture.create_from_image(img)
+
+	# Construye SpriteFrames con 4 animaciones (una por dirección) × 4 frames cada una.
+	# Layout asumido (RPG standard): row 0=down, row 1=left, row 2=right, row 3=up.
+	var sf := SpriteFrames.new()
+	if sf.has_animation("default"):
+		sf.remove_animation("default")
+	for row in range(4):
+		var anim_name: String = ANIMS[row]
+		sf.add_animation(anim_name)
+		sf.set_animation_speed(anim_name, ANIM_FPS)
+		sf.set_animation_loop(anim_name, true)
+		for col in range(4):
+			var at := AtlasTexture.new()
+			at.atlas = tex
+			at.region = Rect2(col * FRAME_W, row * FRAME_H, FRAME_W, FRAME_H)
+			sf.add_frame(anim_name, at)
+
+	# Outline sprite (silhouette) detrás
+	var outline := AnimatedSprite2D.new()
+	outline.sprite_frames = sf
 	outline.centered = true
+	outline.animation = current_anim
 	outline.scale = Vector2(1.08, 1.08)
 	outline.modulate = Color(0, 0, 0, 0.5)
 	outline.z_index = -1
+	outline.name = "Outline"
 	add_child(outline)
-	# Sprite principal encima
-	sprite = Sprite2D.new()
-	sprite.texture = tex
+	outline.play()
+
+	# Sprite principal animado encima
+	sprite = AnimatedSprite2D.new()
+	sprite.sprite_frames = sf
 	sprite.centered = true
+	sprite.animation = current_anim
+	sprite.name = "MainSprite"
 	add_child(sprite)
+	sprite.play()
 
 
 func set_mode(new_mode: int) -> void:
@@ -72,7 +102,33 @@ func _process(delta: float) -> void:
 	if Input.is_key_pressed(KEY_A): dir.x -= 1
 	if Input.is_key_pressed(KEY_D): dir.x += 1
 	if dir == Vector2.ZERO:
+		# Idle: detener animación en frame 0 (mantiene última dirección)
+		if sprite != null and sprite.is_playing():
+			sprite.stop()
+			sprite.frame = 0
+			var outline := get_node_or_null("Outline") as AnimatedSprite2D
+			if outline != null:
+				outline.stop()
+				outline.frame = 0
 		return
+	# Update dirección animada según eje dominante
+	var new_anim: String = current_anim
+	if absf(dir.x) > absf(dir.y):
+		new_anim = "walk_right" if dir.x > 0 else "walk_left"
+	else:
+		new_anim = "walk_down" if dir.y > 0 else "walk_up"
+	if sprite != null:
+		if new_anim != current_anim:
+			current_anim = new_anim
+			sprite.animation = new_anim
+			var outline2 := get_node_or_null("Outline") as AnimatedSprite2D
+			if outline2 != null:
+				outline2.animation = new_anim
+		if not sprite.is_playing():
+			sprite.play()
+			var outline3 := get_node_or_null("Outline") as AnimatedSprite2D
+			if outline3 != null:
+				outline3.play()
 	dir = dir.normalized()
 	var step := dir * SPEED * delta
 	# SUBSTEPPING: si step > HALF_HITBOX, dividir en chunks para evitar tunneling a low FPS
