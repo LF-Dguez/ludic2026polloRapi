@@ -465,8 +465,12 @@ func _regenerate_overworld() -> void:
 	cave_layer.visible = false
 	mines_layer.visible = false
 	dark_bg.visible = false
-	canvas_modulate.color = Color(1, 1, 1, 1)  # luz natural
-	player_light.enabled = false
+	# NOCHE: penumbra azul profunda + luz cálida del jugador (linterna)
+	canvas_modulate.color = Color(0.08, 0.10, 0.18, 1)
+	player_light.enabled = true
+	player_light.color = Color(1.0, 0.85, 0.55)
+	player_light.energy = 1.0
+	player_light.texture_scale = 2.5
 	player.passable_decor = {}  # overworld no usa el dict
 	player.set_mode(Mode.OVERWORLD)
 
@@ -827,8 +831,12 @@ func _exit_to_overworld() -> void:
 	# Limpia enemigos del dungeon (overworld reactiva fantasmas de cementerios via _process)
 	_clear_enemies()
 	dark_bg.visible = false
-	canvas_modulate.color = Color(1, 1, 1, 1)
-	player_light.enabled = false
+	# Restaura noche del overworld al salir de mazmorra
+	canvas_modulate.color = Color(0.08, 0.10, 0.18, 1)
+	player_light.enabled = true
+	player_light.color = Color(1.0, 0.85, 0.55)
+	player_light.energy = 1.0
+	player_light.texture_scale = 2.5
 	player.passable_decor = {}
 	minimap.visible = true
 	minimap_hint.visible = true
