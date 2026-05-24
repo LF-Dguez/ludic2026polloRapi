@@ -9,7 +9,7 @@ const OverworldScript := preload("res://scripts/Overworld.gd")
 const BSPScript := preload("res://scripts/BSPGenerator.gd")
 const CaveScript := preload("res://scripts/CaveGenerator.gd")
 const MineScript := preload("res://scripts/MineGenerator.gd")
-const PlayerScript := preload("res://scripts/Player.gd")
+const PlayerScript := preload("res://scripts/player.gd")
 
 const TILE_SOURCE := 16
 const TILE_DISPLAY := 32

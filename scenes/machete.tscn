@@ -1,0 +1,83 @@
+[gd_scene format=3 uid="uid://bdij1l80pdtjw"]
+
+[ext_resource type="Script" uid="uid://cawtd7kfusm4h" path="res://scripts/machete.gd" id="1_b38jh"]
+[ext_resource type="Texture2D" uid="uid://bfp27lxnsyg7l" path="res://sprites/Machete.png" id="2_1s1h1"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_noihs"]
+atlas = ExtResource("2_1s1h1")
+region = Rect2(0, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_l056m"]
+atlas = ExtResource("2_1s1h1")
+region = Rect2(64, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_6q85e"]
+atlas = ExtResource("2_1s1h1")
+region = Rect2(128, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_x1kky"]
+atlas = ExtResource("2_1s1h1")
+region = Rect2(192, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_uddee"]
+atlas = ExtResource("2_1s1h1")
+region = Rect2(256, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_sx3rw"]
+atlas = ExtResource("2_1s1h1")
+region = Rect2(320, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_8jn8b"]
+atlas = ExtResource("2_1s1h1")
+region = Rect2(384, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_00edh"]
+atlas = ExtResource("2_1s1h1")
+region = Rect2(448, 0, 64, 64)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_3tb44"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_noihs")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_l056m")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_6q85e")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_x1kky")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_uddee")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_sx3rw")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_8jn8b")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_00edh")
+}],
+"loop": true,
+"name": &"default",
+"speed": 15.0
+}]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_2hxks"]
+radius = 16.0
+height = 32.0
+
+[node name="Area2D" type="Area2D" unique_id=1379448445]
+script = ExtResource("1_b38jh")
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=1717621051]
+sprite_frames = SubResource("SpriteFrames_3tb44")
+autoplay = "default"
+frame_progress = 0.57048476
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=263992119]
+shape = SubResource("CapsuleShape2D_2hxks")
