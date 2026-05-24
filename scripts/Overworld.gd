@@ -408,9 +408,11 @@ func generate(w: int, h: int, seed_value: int) -> World:
 				var decors: Array = BIOME_DECORS[biome]
 				var idx: int = int(roll * 10000.0) % decors.size()
 				var d: Dictionary = decors[idx]
-				# Trees (SRC_TREES) → Sprite2D nodes via world.trees (NO al decor layer)
+				# Trees (SRC_TREES) → Sprite2D nodes via world.trees (NO al decor layer).
+				# Reducido a 18% spawn extra para evitar exceso (de ~45% → ~8% del bioma).
 				if d["src"] == SRC_TREES:
-					world.trees.append({"pos": Vector2i(x, y), "type": d["atlas"].x})
+					if rng.randf() < 0.18:
+						world.trees.append({"pos": Vector2i(x, y), "type": d["atlas"].x})
 				else:
 					world.set_decor(x, y, d["src"], d["atlas"])
 
@@ -418,6 +420,9 @@ func generate(w: int, h: int, seed_value: int) -> World:
 	_place_pois_chihuahua(world, rng)
 	for poi in world.pois:
 		_stamp_poi(world, poi)
+
+	# === Pase 4.5: filtrar árboles con min-distance 3 tiles + cap 1200 ===
+	_thin_trees(world, 3, 1200)
 
 	# === Pase 5: pinta tiles bridge desde world.bridges (tracking explícito) ===
 	for bp in world.bridges:
@@ -429,6 +434,47 @@ func generate(w: int, h: int, seed_value: int) -> World:
 	_ensure_dungeon_reachable(world)
 
 	return world
+
+
+# Filtra world.trees: rechaza árboles que estén muy cerca de otro ya aceptado
+# (Poisson-disk light). Cap absoluto total. Preserva diversidad espacial.
+func _thin_trees(world: World, min_dist: int, max_count: int) -> void:
+	if world.trees.is_empty():
+		return
+	var min_d2: int = min_dist * min_dist
+	# Grid bucket para acelerar lookup (cell size = min_dist)
+	var buckets: Dictionary = {}
+	var accepted: Array = []
+	for t in world.trees:
+		if accepted.size() >= max_count:
+			break
+		var tp: Vector2i = t["pos"]
+		var bx: int = tp.x / min_dist
+		var by: int = tp.y / min_dist
+		var too_close: bool = false
+		# Check 3x3 buckets alrededor
+		for dby in [-1, 0, 1]:
+			for dbx in [-1, 0, 1]:
+				var key: Vector2i = Vector2i(bx + dbx, by + dby)
+				if buckets.has(key):
+					for other in buckets[key]:
+						var op: Vector2i = other
+						var dx: int = op.x - tp.x
+						var dy: int = op.y - tp.y
+						if dx * dx + dy * dy < min_d2:
+							too_close = true
+							break
+				if too_close:
+					break
+			if too_close:
+				break
+		if not too_close:
+			accepted.append(t)
+			var bkey: Vector2i = Vector2i(bx, by)
+			if not buckets.has(bkey):
+				buckets[bkey] = []
+			buckets[bkey].append(tp)
+	world.trees = accepted
 
 
 # Flood-fill desde Mata Ortiz; si NO hay dungeon alcanzable, carve path al más cercano.

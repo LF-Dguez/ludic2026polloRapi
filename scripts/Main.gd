@@ -731,8 +731,10 @@ func _clear_trees() -> void:
 
 
 func _spawn_trees(w) -> void:
-	# Spawnea Sprite2D per tree, scale 4 → 128px display = 2× player.
-	# Coordina con Player.tree_blocked_tiles para colisión.
+	# Sprite2D per tree, scale 4 → 128px display (2× player).
+	# Offset visual: trunk (parte baja del sprite) cae sobre tile_pos; canopy
+	# sube/se extiende hacia el norte. Collision: bloquea el tile del trunk
+	# (tile_pos) — canopy es atravesable (player camina "debajo").
 	if _trees_big_tex == null:
 		return
 	var blocked: Dictionary = {}
@@ -745,11 +747,14 @@ func _spawn_trees(w) -> void:
 		atlas_tex.region = Rect2(t_type * TREE_SOURCE_SIZE, 0, TREE_SOURCE_SIZE, TREE_SOURCE_SIZE)
 		spr.texture = atlas_tex
 		spr.centered = true
+		# Offset Y negativo en source coords (centered=true → shifts UP del position).
+		# Source trunk en row y≈27, mitad en y=16 → shift -10 = trunk al position.
+		spr.offset = Vector2(0, -10)
 		spr.scale = Vector2(TREE_DISPLAY_SCALE, TREE_DISPLAY_SCALE)
-		# Posición en world: centro del tile (tile.x*32+16, tile.y*32+16)
+		# Posición = centro del tile del TRUNK (donde está bloqueada la colisión)
 		spr.position = Vector2(tile_pos.x * TILE_DISPLAY + TILE_DISPLAY / 2.0,
 			tile_pos.y * TILE_DISPLAY + TILE_DISPLAY / 2.0)
-		# Y-sort por z básico: árboles más al sur encima
+		# Y-sort: trees del sur por encima de trees del norte
 		spr.z_index = tile_pos.y
 		trees_container.add_child(spr)
 		blocked[tile_pos] = true

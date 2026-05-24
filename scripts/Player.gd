@@ -6,7 +6,9 @@ extends Node2D
 
 const SPEED := 240.0
 const EFFECTIVE_TILE := 32
-const HALF_HITBOX := 10
+# Hitbox player: 12x12 box (HALF=6) — más permisivo que antes (HALF=10 → 20x20)
+# para mejor feel al caminar entre obstáculos y pegado a paredes.
+const HALF_HITBOX := 6
 
 @export var sprite_path: String = "res://art/tiles/player.png"
 
