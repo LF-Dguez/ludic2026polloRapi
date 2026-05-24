@@ -11,6 +11,8 @@ const SRC_AFUERA := 2  # Atlas vegetación (afuera_clean.png 11x10)
 const SRC_TREES := 3   # Árboles top-down generados (trees_topdown.png 8x1)
 # trees_topdown index: 0=pino oscuro, 1=encina, 2=sabino, 3=cardón,
 # 4=mezquite, 5=palo verde, 6=árbol seco, 7=pino claro
+const SRC_BASES := 4   # Bases de bioma SUAVES (biome_bases.png 8x1)
+# bases index: 0=LLANOS, 1=SIERRA, 2=DESIERTO, 3=BARRANCA, 4=MINERO, 5=RIO, 6=MESA, 7=PICO
 
 enum Biome {
 	DESIERTO, LLANOS, SIERRA, BARRANCA, MINERO, RIO, MESA, PICO,
@@ -21,17 +23,17 @@ enum POIType {
 	ENTRADA_PAQUIME, ENTRADA_TARAHUMARA, ENTRADA_NAICA,
 }
 
-# Tile primario {src, atlas} — usando atlas del USUARIO donde posible para estilo consistente.
-# afuera rows 0-2 son grass/tierra/rocas (estilo top-down profesional).
+# Tile primario {src, atlas} — usa biome_bases.png (smooth, no patterns at tiling).
+# Decoraciones (vegetación, props) van encima via decor_layer.
 const BIOME_PRIMARY := {
-	Biome.DESIERTO: {"src": SRC_DESERT, "atlas": Vector2i(0, 0)},   # desert atlas dorado
-	Biome.LLANOS:   {"src": SRC_AFUERA, "atlas": Vector2i(0, 0)},    # afuera grass verde claro
-	Biome.SIERRA:   {"src": SRC_AFUERA, "atlas": Vector2i(1, 0)},    # afuera grass más densa
-	Biome.BARRANCA: {"src": SRC_AFUERA, "atlas": Vector2i(3, 0)},    # afuera tierra/grava
-	Biome.MINERO:   {"src": SRC_AFUERA, "atlas": Vector2i(4, 0)},    # afuera tierra oscura
-	Biome.RIO:      {"src": SRC_OVERWORLD, "atlas": Vector2i(6, 2)}, # mi tile río (no hay user tile)
-	Biome.MESA:     {"src": SRC_AFUERA, "atlas": Vector2i(5, 0)},    # afuera mezclada
-	Biome.PICO:     {"src": SRC_OVERWORLD, "atlas": Vector2i(0, 5)}, # mi tile pico
+	Biome.LLANOS:   {"src": SRC_BASES, "atlas": Vector2i(0, 0)},
+	Biome.SIERRA:   {"src": SRC_BASES, "atlas": Vector2i(1, 0)},
+	Biome.DESIERTO: {"src": SRC_BASES, "atlas": Vector2i(2, 0)},
+	Biome.BARRANCA: {"src": SRC_BASES, "atlas": Vector2i(3, 0)},
+	Biome.MINERO:   {"src": SRC_BASES, "atlas": Vector2i(4, 0)},
+	Biome.RIO:      {"src": SRC_BASES, "atlas": Vector2i(5, 0)},
+	Biome.MESA:     {"src": SRC_BASES, "atlas": Vector2i(6, 0)},
+	Biome.PICO:     {"src": SRC_BASES, "atlas": Vector2i(7, 0)},
 }
 
 # Decoraciones por bioma — ahora con vegetación del atlas "afuera" (SRC_AFUERA)

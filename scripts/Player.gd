@@ -176,6 +176,13 @@ func _is_impassable_overworld_explicit(src_id: int, atlas: Vector2i) -> bool:
 	# Source 3 (trees_topdown) — TODOS los árboles son impasables
 	if src_id == 3:
 		return true
+	# Source 4 (biome_bases) — bases passable salvo RIO/BARRANCA/PICO
+	if src_id == 4:
+		# RIO (atlas 5), BARRANCA (atlas 3), PICO (atlas 7) impasables
+		if atlas.x == 3: return true
+		if atlas.x == 5: return true
+		if atlas.x == 7: return true
+		return false
 	return false
 
 

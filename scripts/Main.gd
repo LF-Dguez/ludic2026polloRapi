@@ -29,6 +29,8 @@ const ATLAS_AFUERA_COLS := 11
 const ATLAS_AFUERA_ROWS := 10
 const ATLAS_TREES_COLS := 8
 const ATLAS_TREES_ROWS := 1
+const ATLAS_BASES_COLS := 8
+const ATLAS_BASES_ROWS := 1
 const ATLAS_PAQUIME_COLS := 4
 const ATLAS_PAQUIME_ROWS := 4
 const ATLAS_CAVE_COLS := 8
@@ -200,6 +202,15 @@ func _build_overworld_tileset() -> TileSet:
 		for y in range(ATLAS_TREES_ROWS):
 			src3.create_tile(Vector2i(x, y))
 	ts.add_source(src3, 3)
+
+	# Source 4: biome_bases.png — bases SUAVES uniformes por bioma (no tile-able artifacts)
+	var src4 := TileSetAtlasSource.new()
+	src4.texture = _load_texture("res://art/tiles/biome_bases.png")
+	src4.texture_region_size = Vector2i(TILE_SOURCE, TILE_SOURCE)
+	for x in range(ATLAS_BASES_COLS):
+		for y in range(ATLAS_BASES_ROWS):
+			src4.create_tile(Vector2i(x, y))
+	ts.add_source(src4, 4)
 
 	return ts
 
