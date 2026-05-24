@@ -118,33 +118,31 @@ func _process(delta: float) -> void:
 		var pulse: float = 1.0 + sin(_t * 1.5) * 0.04
 		_title_lbl.scale = Vector2(pulse, pulse)
 		_title_lbl.pivot_offset = _title_lbl.size * 0.5
-
-
-func _input(event: InputEvent) -> void:
-	# _input se llama ANTES que _unhandled_input — captura primero que Main.gd
+	# Input polling — funciona aunque otro nodo consuma el evento.
+	# Input.is_*_pressed lee del estado global, independiente del routing.
 	if _input_consumed:
 		return
-	if event is InputEventKey and event.pressed and not event.echo:
-		match event.keycode:
-			KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
-				_input_consumed = true
-				start_pressed.emit()
-				get_viewport().set_input_as_handled()
-			KEY_C:
-				if FileAccess.file_exists("user://save.cfg"):
-					_input_consumed = true
-					load_pressed.emit()
-					get_viewport().set_input_as_handled()
-			KEY_ESCAPE:
-				_input_consumed = true
-				quit_pressed.emit()
-				get_viewport().set_input_as_handled()
-	elif event is InputEventMouseButton and event.pressed:
-		# Click izquierdo también arranca el juego
-		if event.button_index == MOUSE_BUTTON_LEFT:
+	if Input.is_physical_key_pressed(KEY_SPACE) or Input.is_physical_key_pressed(KEY_ENTER) or Input.is_physical_key_pressed(KEY_KP_ENTER):
+		_input_consumed = true
+		print("[TitleScreen] start_pressed via polling")
+		start_pressed.emit()
+		return
+	if Input.is_physical_key_pressed(KEY_C):
+		if FileAccess.file_exists("user://save.cfg"):
 			_input_consumed = true
-			start_pressed.emit()
-			get_viewport().set_input_as_handled()
+			print("[TitleScreen] load_pressed via polling")
+			load_pressed.emit()
+			return
+	if Input.is_physical_key_pressed(KEY_ESCAPE):
+		_input_consumed = true
+		print("[TitleScreen] quit_pressed via polling")
+		quit_pressed.emit()
+		return
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		_input_consumed = true
+		print("[TitleScreen] start via mouse click")
+		start_pressed.emit()
+		return
 
 
 func dismiss() -> void:
