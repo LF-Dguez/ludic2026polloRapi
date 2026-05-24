@@ -4,7 +4,6 @@
 [ext_resource type="Texture2D" uid="uid://dvmt6qsqoa5hx" path="res://Principal.png" id="2_0bbpv"]
 [ext_resource type="Script" uid="uid://ctiljxoq63yl1" path="res://scripts/player.gd" id="2_rarhs"]
 [ext_resource type="Script" uid="uid://hnfqjii6ekbc" path="res://scripts/Minimap.gd" id="3"]
-[ext_resource type="PackedScene" uid="uid://bdij1l80pdtjw" path="res://scenes/machete.tscn" id="3_vcsgt"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_vcsgt"]
 atlas = ExtResource("2_0bbpv")
@@ -181,7 +180,6 @@ z_index = 5
 [node name="Player" type="CharacterBody2D" parent="." unique_id=868441963]
 z_index = 10
 script = ExtResource("2_rarhs")
-machete_scene = ExtResource("3_vcsgt")
 
 [node name="PlayerLight" type="PointLight2D" parent="Player" unique_id=1852740817]
 enabled = false
