@@ -9,7 +9,10 @@ const OverworldScript := preload("res://scripts/Overworld.gd")
 const BSPScript := preload("res://scripts/BSPGenerator.gd")
 const CaveScript := preload("res://scripts/CaveGenerator.gd")
 const MineScript := preload("res://scripts/MineGenerator.gd")
-const PlayerScript := preload("res://scripts/player.gd")
+const PlayerScript := preload("res://scripts/Player.gd")
+const EnemySpawnerScript := preload("res://scripts/EnemySpawner.gd")
+const SaveManagerScript := preload("res://scripts/SaveManager.gd")
+const BossScript := preload("res://scripts/Boss.gd")
 
 const TILE_SOURCE := 16
 const TILE_DISPLAY := 32
@@ -87,6 +90,16 @@ var minimap_large: bool = false
 
 var current_seed: int = 0
 var mode: int = Mode.OVERWORLD
+# Roguelike progression: POIs de mazmorra completados (Array[Vector2i])
+var cleared_dungeons: Array = []
+# Stats globales (persistidos)
+var stats_kills: int = 0
+var stats_runs: int = 0
+# Inventory (Array[Dictionary {type, count}])
+var inventory: Array = []
+# Save data cargado al inicio (null si new game)
+var _pending_load: Dictionary = {}
+var _loaded_from_save: bool = false
 var world  # Overworld.World
 var dungeon  # BSPGenerator.Dungeon
 var cave  # CaveGenerator.Cave
@@ -100,8 +113,29 @@ var _trees_big_tex: Texture2D = null
 const TREE_SOURCE_SIZE := 32  # cada tile en trees_big.png es 32x32
 const TREE_DISPLAY_SCALE := 4.0  # source 32 × scale 4 = 128px display = 2× player
 
+# Enemy sprite frames (cached)
+var _bandido_frames: SpriteFrames = null
+var _fantasma_frames: SpriteFrames = null
+# Container para enemigos (parent común para fácil cleanup)
+var _enemies_container: Node2D = null
+# Tracking de cementerios ya poblados (poi.pos → true)
+var _cementerios_spawned: Dictionary = {}
+
 var saved_overworld_tile: Vector2i = Vector2i.ZERO
 var active_dungeon_poi: Variant = null
+
+# Camera shake
+var _shake_t: float = 0.0
+var _shake_amp: float = 0.0
+var _shake_seed: float = 0.0
+# Active boss reference (uno por dungeon)
+var _active_boss: Node = null
+# UIs creadas en runtime
+var _boss_bar = null
+var _victory_screen = null
+var _xp_bar = null
+var _level_popup = null
+var _achievements = null
 
 
 func _ready() -> void:
@@ -128,6 +162,150 @@ func _ready() -> void:
 	player_light.texture = _load_texture("res://art/tiles/light_texture.png")
 	# Carga atlas de trees grandes para Sprite2D spawn
 	_trees_big_tex = _load_texture("res://art/tiles/trees_big.png")
+	# Pre-build SpriteFrames para enemigos (cached)
+	var bandido_tex := _load_texture("res://sprites/npc's/BandidoMalo.png")
+	var fantasma_tex := _load_texture("res://sprites/npc's/Fantasmiota.png")
+	if bandido_tex != null:
+		_bandido_frames = EnemySpawnerScript.build_bandido_frames(bandido_tex)
+	if fantasma_tex != null:
+		_fantasma_frames = EnemySpawnerScript.build_fantasma_frames(fantasma_tex)
+	# Container para enemigos (oculto en overworld al spawnear, visible al entrar)
+	_enemies_container = Node2D.new()
+	_enemies_container.name = "EnemiesContainer"
+	_enemies_container.z_index = 8
+	add_child(_enemies_container)
+	# HeartsUI — 10 corazones top-left HUD
+	var hud := get_node("HUD") as CanvasLayer
+	if hud != null:
+		# HotbarUI — al lado de los corazones (bottom-left + offset right)
+		var hb_script = load("res://scripts/HotbarUI.gd")
+		var hotbar = hb_script.new()
+		hotbar.name = "HotbarUI"
+		var vp_hb: Vector2 = get_viewport_rect().size
+		hotbar.set("offset_left", 8.0 + 10 * 56.0 + 24.0)
+		hotbar.set("offset_top", vp_hb.y - 80.0)
+		hotbar.set("offset_right", 8.0 + 10 * 56.0 + 24.0 + 4 * 64.0)
+		hotbar.set("offset_bottom", vp_hb.y - 8.0)
+		hud.add_child(hotbar)
+		if "inventory" in player and player.inventory != null:
+			hotbar.bind_inventory(player.inventory)
+		# WeaponLabel — muestra arma actual encima del hotbar
+		var weapon_lbl := Label.new()
+		weapon_lbl.name = "WeaponLabel"
+		weapon_lbl.add_theme_font_size_override("font_size", 14)
+		weapon_lbl.add_theme_color_override("font_color", Color(0.95, 0.85, 0.45))
+		weapon_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0))
+		weapon_lbl.add_theme_constant_override("shadow_offset_x", 1)
+		weapon_lbl.add_theme_constant_override("shadow_offset_y", 1)
+		weapon_lbl.text = "[Q/E] Arma: Machete"
+		weapon_lbl.set("offset_left", 8.0 + 10 * 56.0 + 24.0)
+		weapon_lbl.set("offset_top", vp_hb.y - 100.0)
+		weapon_lbl.set("offset_right", 8.0 + 10 * 56.0 + 24.0 + 240.0)
+		weapon_lbl.set("offset_bottom", vp_hb.y - 80.0)
+		hud.add_child(weapon_lbl)
+		if player.has_signal("weapon_changed"):
+			player.weapon_changed.connect(func(wid):
+				var def = Player.WEAPONS.get(wid, {})
+				weapon_lbl.text = "[Tab] Arma: %s" % def.get("name", wid)
+			)
+		weapon_lbl.text = "[Tab] Arma: Machete"
+		# PauseMenu
+		var pm_script = load("res://scripts/PauseMenu.gd")
+		var pause_menu = pm_script.new()
+		pause_menu.name = "PauseMenu"
+		pause_menu.set("offset_left", 0.0)
+		pause_menu.set("offset_top", 0.0)
+		pause_menu.set("offset_right", get_viewport_rect().size.x)
+		pause_menu.set("offset_bottom", get_viewport_rect().size.y)
+		hud.add_child(pause_menu)
+		pause_menu.save_pressed.connect(_save_game)
+		pause_menu.load_pressed.connect(_load_game)
+		pause_menu.new_game_pressed.connect(_on_new_game_requested)
+		# InventoryPanel
+		var ip_script = load("res://scripts/InventoryPanel.gd")
+		var inv_panel = ip_script.new()
+		inv_panel.name = "InventoryPanel"
+		inv_panel.set("offset_left", 0.0)
+		inv_panel.set("offset_top", 0.0)
+		inv_panel.set("offset_right", get_viewport_rect().size.x)
+		inv_panel.set("offset_bottom", get_viewport_rect().size.y)
+		hud.add_child(inv_panel)
+		if "inventory" in player and player.inventory != null:
+			inv_panel.bind(player.inventory, player)
+		var hearts_script = load("res://scripts/HeartsUI.gd")
+		var hearts = hearts_script.new()
+		hearts.name = "HeartsUI"
+		# Esquina inferior izquierda — anchors a bottom-left + offsets negativos
+		var vp: Vector2 = get_viewport_rect().size
+		var total_w: float = 10 * 56.0  # 48 heart + 8 spacing
+		var bar_h: float = 48.0
+		hearts.set("offset_left", 8.0)
+		hearts.set("offset_top", vp.y - bar_h - 8.0)
+		hearts.set("offset_right", 8.0 + total_w)
+		hearts.set("offset_bottom", vp.y - 8.0)
+		hud.add_child(hearts)
+		# Conecta señal HP del player
+		if player.has_signal("hp_changed"):
+			player.hp_changed.connect(func(hp, max_hp): hearts.set_hp(hp, max_hp))
+		# Death: muestra GameOverScreen
+		if player.has_signal("player_died"):
+			player.player_died.connect(_on_player_died)
+		# GameOverScreen
+		var go_script = load("res://scripts/GameOverScreen.gd")
+		var go = go_script.new()
+		go.name = "GameOverScreen"
+		go.set("offset_left", 0.0)
+		go.set("offset_top", 0.0)
+		go.set("offset_right", get_viewport_rect().size.x)
+		go.set("offset_bottom", get_viewport_rect().size.y)
+		hud.add_child(go)
+		go.respawn_requested.connect(_on_respawn_requested)
+		go.new_game_requested.connect(_on_new_game_requested)
+		# Boss HP bar
+		var bb_script = load("res://scripts/BossHPBar.gd")
+		_boss_bar = bb_script.new()
+		_boss_bar.name = "BossHPBar"
+		_boss_bar.set("offset_left", 0.0)
+		_boss_bar.set("offset_top", 0.0)
+		_boss_bar.set("offset_right", get_viewport_rect().size.x)
+		_boss_bar.set("offset_bottom", 80.0)
+		hud.add_child(_boss_bar)
+		# Victory screen
+		var vs_script = load("res://scripts/VictoryScreen.gd")
+		_victory_screen = vs_script.new()
+		_victory_screen.name = "VictoryScreen"
+		_victory_screen.set("offset_left", 0.0)
+		_victory_screen.set("offset_top", 0.0)
+		_victory_screen.set("offset_right", get_viewport_rect().size.x)
+		_victory_screen.set("offset_bottom", get_viewport_rect().size.y)
+		hud.add_child(_victory_screen)
+		# XP bar
+		var xp_script = load("res://scripts/XPBar.gd")
+		_xp_bar = xp_script.new()
+		_xp_bar.name = "XPBar"
+		hud.add_child(_xp_bar)
+		_xp_bar.level_up.connect(_on_level_up)
+		# Level-up popup
+		var lp_script = load("res://scripts/LevelUpPopup.gd")
+		_level_popup = lp_script.new()
+		_level_popup.name = "LevelUpPopup"
+		_level_popup.set("offset_left", 0.0)
+		_level_popup.set("offset_top", 0.0)
+		_level_popup.set("offset_right", get_viewport_rect().size.x)
+		_level_popup.set("offset_bottom", get_viewport_rect().size.y)
+		hud.add_child(_level_popup)
+		# Achievements
+		var ach_script = load("res://scripts/AchievementSystem.gd")
+		_achievements = ach_script.new()
+		_achievements.name = "AchievementSystem"
+		_achievements.set("offset_left", 0.0)
+		_achievements.set("offset_top", 0.0)
+		_achievements.set("offset_right", get_viewport_rect().size.x)
+		_achievements.set("offset_bottom", get_viewport_rect().size.y)
+		hud.add_child(_achievements)
+		# Enemy kill signal → XP + achievements
+		if player.has_signal("enemy_killed"):
+			player.enemy_killed.connect(_on_enemy_killed)
 	# Inicializa minimap con referencia al jugador
 	minimap.player_ref = player
 	_apply_minimap_size()
@@ -139,6 +317,18 @@ func _ready() -> void:
 	player.mines_layer = mines_layer
 	# (Player ya no usa estos arrays — collision via _is_impassable_overworld_explicit
 	# y whitelist hardcoded por mode. Constants quedan acá como documentación.)
+	# Intenta cargar save antes de generar
+	var loaded = SaveManagerScript.load_from_disk()
+	if loaded != null:
+		_pending_load = loaded
+		_loaded_from_save = true
+		cleared_dungeons = loaded.get("cleared", [])
+		stats_kills = loaded.get("kills", 0)
+		stats_runs = loaded.get("runs", 0)
+		inventory = loaded.get("inventory", [])
+		print("[Save] Cargado save: seed=%d cleared=%d kills=%d runs=%d" % [
+			loaded.get("seed", 0), cleared_dungeons.size(), stats_kills, stats_runs
+		])
 	randomize()
 	await _regenerate_overworld()
 	# Auto-tour solo se activa con F12 (QA screenshots), no automático al iniciar
@@ -276,7 +466,39 @@ func _regenerate_overworld() -> void:
 	info.text = "Generando mundo de %dx%d tiles..." % [MAP_W, MAP_H]
 	await get_tree().process_frame
 
-	current_seed = randi()
+	# Si veníamos de save, usa el seed guardado (mismo mundo). Sino random.
+	if _loaded_from_save and _pending_load.has("seed"):
+		current_seed = int(_pending_load["seed"])
+		# Restaura upgrades permanentes ANTES de reset_hp para max correcto
+		player.max_hp_bonus = int(_pending_load.get("max_hp_bonus", 0))
+		player.damage_bonus = int(_pending_load.get("damage_bonus", 0))
+		player.speed_bonus = float(_pending_load.get("speed_bonus", 0.0))
+		player.crit_chance = float(_pending_load.get("crit_chance", 0.10))
+		# Aplica HP al player
+		if player.has_method("reset_hp"):
+			player.reset_hp()
+		var loaded_hp: int = int(_pending_load.get("hp", 10))
+		# fuerza HP exacto cargado (reset_hp pone max; sustraemos diff)
+		var diff: int = player.get_max_hp() - loaded_hp
+		if diff > 0:
+			player.current_hp = loaded_hp
+			if player.has_signal("hp_changed"):
+				player.hp_changed.emit(player.current_hp, player.get_max_hp())
+		# Restaura inventory
+		var inv_arr: Array = _pending_load.get("inventory", [])
+		if player.inventory != null and inv_arr.size() > 0:
+			player.inventory.from_array(inv_arr)
+		# Restaura XP + achievements
+		if _xp_bar != null:
+			_xp_bar.set_state({
+				"level": _pending_load.get("xp_level", 1),
+				"xp": _pending_load.get("xp_current", 0),
+			})
+		if _achievements != null:
+			_achievements.set_state({"unlocked": _pending_load.get("achievements", [])})
+		_loaded_from_save = false  # solo aplicar 1 vez
+	else:
+		current_seed = randi()
 	var ow := OverworldScript.new()
 	var t0 := Time.get_ticks_msec()
 	world = ow.generate(MAP_W, MAP_H, current_seed)
@@ -285,10 +507,16 @@ func _regenerate_overworld() -> void:
 	await _paint_overworld(world)
 	var t_paint := Time.get_ticks_msec() - t0
 
-	var spawn_tile: Vector2i = _find_first_poi(OverworldScript.POIType.MATA_ORTIZ)
-	if spawn_tile == Vector2i(-1, -1):
-		spawn_tile = _find_safe_spawn(Vector2i(MAP_W / 2, MAP_H / 2))
+	# Spawn: si hay save con tile_pos válido, usarlo; sino Mata Ortiz
+	var spawn_tile: Vector2i
+	if _pending_load.has("tile_pos") and (_pending_load["tile_pos"] as Vector2i) != Vector2i.ZERO:
+		spawn_tile = _find_safe_spawn(_pending_load["tile_pos"])
+	else:
+		spawn_tile = _find_first_poi(OverworldScript.POIType.MATA_ORTIZ)
+		if spawn_tile == Vector2i(-1, -1):
+			spawn_tile = _find_safe_spawn(Vector2i(MAP_W / 2, MAP_H / 2))
 	player.set_tile_position(spawn_tile)
+	_pending_load.clear()
 	# Renderiza minimap con el nuevo mundo
 	minimap.render(world)
 	minimap.visible = true
@@ -392,6 +620,13 @@ func _enter_paquime_dungeon(poi) -> void:
 	if entrance_tile == Vector2i(-1, -1):
 		entrance_tile = Vector2i(DUN_W / 2, DUN_H / 2)
 	player.set_tile_position(entrance_tile)
+	_clear_enemies()
+	_spawn_enemies_paquime(dungeon)
+	# Boss en el cuarto exit — solo si dungeon no está cleared
+	if not cleared_dungeons.has(poi.pos):
+		var exit_tile: Vector2i = _find_first_tile_in_dungeon(BSPScript.T_EXIT)
+		if exit_tile != Vector2i(-1, -1):
+			_spawn_boss("senor_paquime", exit_tile, dungeon_layer, 1)
 	_update_hud(t_gen, t_paint)
 	await _save_screenshot("dungeon_paquime")
 
@@ -462,6 +697,10 @@ func _enter_cave_dungeon(poi) -> void:
 	var t_paint := Time.get_ticks_msec() - t0
 
 	player.set_tile_position(cave.spawn)
+	_clear_enemies()
+	_spawn_enemies_cave(cave)
+	if not cleared_dungeons.has(poi.pos):
+		_spawn_boss("bestia_cobre", cave.exit_pos, cave_layer, 2)
 	_update_hud(t_gen, t_paint)
 	await _save_screenshot("dungeon_cave")
 
@@ -523,6 +762,10 @@ func _enter_mine_dungeon(poi) -> void:
 	var t_paint := Time.get_ticks_msec() - t0
 
 	player.set_tile_position(mine.spawn)
+	_clear_enemies()
+	_spawn_enemies_mine(mine)
+	if not cleared_dungeons.has(poi.pos):
+		_spawn_boss("espectro_cristal", mine.exit_pos, mines_layer, 3)
 	_update_hud(t_gen, t_paint)
 	await _save_screenshot("dungeon_mine")
 
@@ -559,7 +802,14 @@ func _paint_mine(m) -> void:
 
 # ============ EXIT ============
 
+func _on_dungeon_exited_for_clear() -> void:
+	# Llamado desde _exit_to_overworld para marcar el dungeon visitado como cleared.
+	if active_dungeon_poi != null:
+		_mark_dungeon_cleared(active_dungeon_poi.pos)
+
+
 func _exit_to_overworld() -> void:
+	_on_dungeon_exited_for_clear()
 	mode = Mode.OVERWORLD
 	overworld_layer.visible = true
 	overworld_decor_layer.visible = true
@@ -567,6 +817,8 @@ func _exit_to_overworld() -> void:
 	dungeon_layer.visible = false
 	cave_layer.visible = false
 	mines_layer.visible = false
+	# Limpia enemigos del dungeon (overworld reactiva fantasmas de cementerios via _process)
+	_clear_enemies()
 	dark_bg.visible = false
 	canvas_modulate.color = Color(1, 1, 1, 1)
 	player_light.enabled = false
@@ -597,7 +849,7 @@ func _update_hud(t_gen: int, t_paint: int) -> void:
 				counts.get(OverworldScript.POIType.ENTRADA_TARAHUMARA, 0),
 				counts.get(OverworldScript.POIType.ENTRADA_NAICA, 0),
 			]
-			info.text = "Norte Profundo — OVERWORLD  |  %dx%d  |  Seed:%d  |  gen %dms paint %dms\n%s\n[WASD] mover  [Space] entrar mazmorra  [R] regenerar mundo  [Esc] salir" % [
+			info.text = "Norte Profundo — OVERWORLD  |  %dx%d  |  Seed:%d  |  gen %dms paint %dms\n%s\n[WASD] mover  [Shift] esquivar  [Space] entrar  [I] inventario  [Esc/P] pausa  [R] regenerar" % [
 				MAP_W, MAP_H, current_seed, t_gen, t_paint, summary
 			]
 		Mode.DUNGEON_PAQUIME:
@@ -614,8 +866,79 @@ func _update_hud(t_gen: int, t_paint: int) -> void:
 			]
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_update_prompt()
+	_check_cementerio_spawns()
+	_update_camera_shake(delta)
+	_check_achievements()
+
+
+# ─── Camera shake ────────────────────────────────────────────────────
+func camera_shake(amplitude: float, duration: float) -> void:
+	_shake_amp = maxf(_shake_amp, amplitude)
+	_shake_t = maxf(_shake_t, duration)
+	if _shake_seed == 0.0:
+		_shake_seed = randf() * 1000.0
+
+
+func _update_camera_shake(delta: float) -> void:
+	if camera == null:
+		return
+	if _shake_t > 0.0:
+		_shake_t -= delta
+		var t: float = Time.get_ticks_msec() * 0.05 + _shake_seed
+		camera.offset = Vector2(
+			sin(t * 0.9) * _shake_amp,
+			cos(t * 1.3) * _shake_amp
+		)
+		if _shake_t <= 0.0:
+			camera.offset = Vector2.ZERO
+			_shake_amp = 0.0
+
+
+# ─── XP / Level ───────────────────────────────────────────────────────
+func _on_enemy_killed(enemy_type: String, xp_value: int) -> void:
+	stats_kills += 1
+	if _xp_bar != null:
+		_xp_bar.add_xp(xp_value)
+
+
+func _on_level_up(new_level: int) -> void:
+	# Cada nivel: +1 max HP + dmg cada 3 niveles + crit chance escalable
+	if player == null:
+		return
+	player.max_hp_bonus += 1
+	player.current_hp += 1  # restaura 1 al subir
+	if new_level % 3 == 0:
+		player.damage_bonus += 1
+	player.crit_chance = minf(0.40, player.crit_chance + 0.02)
+	if player.has_signal("hp_changed"):
+		player.hp_changed.emit(player.current_hp, player.get_max_hp())
+	var bonus_txt := "+1 HP máx"
+	if new_level % 3 == 0:
+		bonus_txt += "   +1 daño"
+	bonus_txt += "   +2%% crit"
+	if _level_popup != null:
+		_level_popup.show_level(new_level, bonus_txt)
+	# Achievements de nivel
+	if _achievements != null:
+		if new_level >= 5: _achievements.unlock("level_5")
+		if new_level >= 10: _achievements.unlock("level_10")
+
+
+# ─── Achievements check (cada frame, cheap) ──────────────────────────
+func _check_achievements() -> void:
+	if _achievements == null:
+		return
+	if stats_kills >= 1:
+		_achievements.unlock("first_blood")
+	if stats_kills >= 10:
+		_achievements.unlock("ten_kills")
+	if stats_kills >= 50:
+		_achievements.unlock("fifty_kills")
+	if player != null and player.inventory != null:
+		if player.inventory.count_of("pesos_plata") >= 200:
+			_achievements.unlock("rich")
 
 
 func _update_prompt() -> void:
@@ -676,8 +999,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_BACKSPACE:
 				if mode != Mode.OVERWORLD:
 					_exit_to_overworld()
-			KEY_ESCAPE:
-				get_tree().quit()
+			KEY_ESCAPE, KEY_P:
+				var pm = $HUD.get_node_or_null("PauseMenu")
+				if pm != null and pm.has_method("toggle"):
+					pm.toggle()
+			KEY_I:
+				var ip = $HUD.get_node_or_null("InventoryPanel")
+				if ip != null and ip.has_method("toggle"):
+					ip.toggle()
 			KEY_Q:
 				camera.zoom *= 0.85
 				_clamp_zoom()
@@ -688,6 +1017,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				# Solo togglear minimap en overworld (oculto en dungeons)
 				if mode == Mode.OVERWORLD:
 					_toggle_minimap()
+			KEY_F5:
+				_save_game()
+			KEY_F9:
+				_load_game()
 			KEY_F12:
 				if mode == Mode.OVERWORLD:
 					_auto_tour()
@@ -730,6 +1063,159 @@ func _handle_interact() -> void:
 func _clear_trees() -> void:
 	for child in trees_container.get_children():
 		child.queue_free()
+
+
+func _clear_enemies() -> void:
+	if _enemies_container == null:
+		return
+	for child in _enemies_container.get_children():
+		child.queue_free()
+	_cementerios_spawned.clear()
+	_active_boss = null
+	if _boss_bar != null:
+		_boss_bar.hide_boss()
+
+
+# ─── Boss spawn / handlers ───────────────────────────────────────────
+func _spawn_boss(boss_id: String, tile: Vector2i, layer: TileMapLayer, mode_int: int) -> void:
+	var pwx: float = tile.x * TILE_DISPLAY + TILE_DISPLAY / 2.0
+	var pwy: float = tile.y * TILE_DISPLAY + TILE_DISPLAY / 2.0
+	var boss = CharacterBody2D.new()
+	boss.set_script(BossScript)
+	boss.position = Vector2(pwx, pwy)
+	boss.setup(boss_id, layer, mode_int)
+	_enemies_container.add_child(boss)
+	_active_boss = boss
+	boss.hp_changed.connect(_on_boss_hp_changed)
+	boss.boss_died.connect(_on_boss_died)
+	if _boss_bar != null:
+		_boss_bar.show_boss(BossScript.BOSSES[boss_id]["name"], boss.hp, boss.max_hp)
+
+
+func _on_boss_hp_changed(cur: int, max_hp: int, name: String) -> void:
+	if _boss_bar != null:
+		_boss_bar.update_hp(cur, max_hp, name)
+
+
+func _on_boss_died(boss_id: String, pos: Vector2, drops: Array) -> void:
+	if _boss_bar != null:
+		_boss_bar.hide_boss()
+	_active_boss = null
+	# Marca dungeon como cleared inmediatamente
+	if active_dungeon_poi != null:
+		_mark_dungeon_cleared(active_dungeon_poi.pos)
+	# Victory popup + XP
+	var cfg: Dictionary = BossScript.BOSSES.get(boss_id, {})
+	var xp_reward: int = int(cfg.get("xp_reward", 50))
+	if _xp_bar != null:
+		_xp_bar.add_xp(xp_reward)
+	if _victory_screen != null:
+		_victory_screen.show_victory(cfg.get("name", "Boss"), xp_reward, drops)
+	# Achievements
+	if _achievements != null:
+		match boss_id:
+			"senor_paquime": _achievements.unlock("clear_paquime")
+			"bestia_cobre": _achievements.unlock("clear_cave")
+			"espectro_cristal": _achievements.unlock("clear_mine")
+		# Si los 3
+		if _achievements.unlocked.has("clear_paquime") and _achievements.unlocked.has("clear_cave") and _achievements.unlocked.has("clear_mine"):
+			_achievements.unlock("all_bosses")
+	# Screen shake épico
+	camera_shake(10.0, 0.5)
+
+
+# Encuentra N tiles de FLOOR random en el dungeon Paquimé y spawnea bandidos
+func _spawn_enemies_paquime(dun) -> void:
+	if _bandido_frames == null:
+		return
+	var count: int = 8 + randi() % 5  # 8-12 bandidos
+	var placed: int = 0
+	var attempts: int = 0
+	while placed < count and attempts < count * 50:
+		attempts += 1
+		var x: int = randi_range(2, dun.width - 3)
+		var y: int = randi_range(2, dun.height - 3)
+		var t: Vector2i = dun.get_tile(x, y)
+		# Solo en floor passable (T_FLOOR, T_PLAZA, T_BALL)
+		if not (t == BSPScript.T_FLOOR or t == BSPScript.T_PLAZA or t == BSPScript.T_BALL):
+			continue
+		# No muy cerca del spawn del player
+		var pwx: int = x * TILE_DISPLAY + TILE_DISPLAY / 2
+		var pwy: int = y * TILE_DISPLAY + TILE_DISPLAY / 2
+		var dx: int = pwx - int(player.position.x)
+		var dy: int = pwy - int(player.position.y)
+		if dx * dx + dy * dy < 120 * 120:
+			continue
+		EnemySpawnerScript.spawn_bandido(_enemies_container, Vector2(pwx, pwy), _bandido_frames, dungeon_layer, 1)
+		placed += 1
+
+
+# Cave Tarahumara: spawn fantasmas (cave atmosphere)
+func _spawn_enemies_cave(c) -> void:
+	if _fantasma_frames == null:
+		return
+	var count: int = 5 + randi() % 4
+	var placed: int = 0
+	var attempts: int = 0
+	while placed < count and attempts < count * 50:
+		attempts += 1
+		var x: int = randi_range(2, c.width - 3)
+		var y: int = randi_range(2, c.height - 3)
+		if c.walls[y * c.width + x] != 0:
+			continue
+		var pwx: int = x * TILE_DISPLAY + TILE_DISPLAY / 2
+		var pwy: int = y * TILE_DISPLAY + TILE_DISPLAY / 2
+		var dx: int = pwx - int(player.position.x)
+		var dy: int = pwy - int(player.position.y)
+		if dx * dx + dy * dy < 150 * 150:
+			continue
+		EnemySpawnerScript.spawn_fantasma(_enemies_container, Vector2(pwx, pwy), _fantasma_frames, cave_layer, 2)
+		placed += 1
+
+
+# Mina Naica: spawn bandidos
+func _spawn_enemies_mine(m) -> void:
+	if _bandido_frames == null:
+		return
+	var count: int = 6 + randi() % 5
+	var placed: int = 0
+	var attempts: int = 0
+	while placed < count and attempts < count * 50:
+		attempts += 1
+		var x: int = randi_range(2, m.width - 3)
+		var y: int = randi_range(2, m.height - 3)
+		if m.walls[y * m.width + x] != 0:
+			continue
+		var pwx: int = x * TILE_DISPLAY + TILE_DISPLAY / 2
+		var pwy: int = y * TILE_DISPLAY + TILE_DISPLAY / 2
+		var dx: int = pwx - int(player.position.x)
+		var dy: int = pwy - int(player.position.y)
+		if dx * dx + dy * dy < 120 * 120:
+			continue
+		EnemySpawnerScript.spawn_bandido(_enemies_container, Vector2(pwx, pwy), _bandido_frames, mines_layer, 3)
+		placed += 1
+
+
+# Cementerios overworld: spawn 2-3 fantasmas al acercarse player (radio 200px)
+func _check_cementerio_spawns() -> void:
+	if mode != Mode.OVERWORLD or _fantasma_frames == null or world == null:
+		return
+	var ppos: Vector2 = player.position
+	for poi in world.pois:
+		if poi.type != OverworldScript.POIType.CEMENTERIO:
+			continue
+		var cem_world: Vector2 = Vector2(
+			poi.pos.x * TILE_DISPLAY + TILE_DISPLAY / 2,
+			poi.pos.y * TILE_DISPLAY + TILE_DISPLAY / 2
+		)
+		var d: float = ppos.distance_to(cem_world)
+		if d < 350 and not _cementerios_spawned.has(poi.pos):
+			# Spawn 2-3 fantasmas alrededor del cementerio
+			var n: int = 2 + randi() % 2
+			for _i in range(n):
+				var off: Vector2 = Vector2(randf_range(-80, 80), randf_range(-80, 80))
+				EnemySpawnerScript.spawn_fantasma(_enemies_container, cem_world + off, _fantasma_frames, overworld_layer, 0)
+			_cementerios_spawned[poi.pos] = true
 
 
 func _spawn_trees(w) -> void:
@@ -787,6 +1273,129 @@ func _apply_minimap_size() -> void:
 		minimap_hint.text = "[M] agrandar minimapa"
 		minimap_hint.position = Vector2(vp.x - MINI_SMALL.x - 10, 100 + MINI_SMALL.y + 4)
 	minimap.queue_redraw()
+
+
+func _notification(what: int) -> void:
+	# Auto-save al cerrar ventana
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_save_game()
+
+
+func _save_game() -> void:
+	if world == null or player == null:
+		return
+	# Serializa inventory real del player
+	var inv_data: Array = []
+	if player.inventory != null:
+		inv_data = player.inventory.to_array()
+	# XP state
+	var xp_lvl: int = 1
+	var xp_cur: int = 0
+	if _xp_bar != null:
+		var st: Dictionary = _xp_bar.get_state()
+		xp_lvl = st.get("level", 1)
+		xp_cur = st.get("xp", 0)
+	# Achievements
+	var ach_arr: Array = []
+	if _achievements != null:
+		ach_arr = _achievements.unlocked.keys()
+	var data := {
+		"seed": current_seed,
+		"hp": player.current_hp if "current_hp" in player else 10,
+		"max_hp": player.MAX_HP if "MAX_HP" in player else 10,
+		"tile_pos": player.get_current_tile() if mode == Mode.OVERWORLD else _find_first_poi(OverworldScript.POIType.MATA_ORTIZ),
+		"cleared": cleared_dungeons,
+		"kills": stats_kills,
+		"runs": stats_runs,
+		"inventory": inv_data,
+		"xp_level": xp_lvl,
+		"xp_current": xp_cur,
+		"max_hp_bonus": player.max_hp_bonus,
+		"damage_bonus": player.damage_bonus,
+		"speed_bonus": player.speed_bonus,
+		"crit_chance": player.crit_chance,
+		"achievements": ach_arr,
+	}
+	var ok: bool = SaveManagerScript.save_to_disk(data)
+	if ok:
+		prompt.text = "[Save guardado]"
+		print("[Save] Guardado OK — seed=%d cleared=%d lvl=%d" % [current_seed, cleared_dungeons.size(), xp_lvl])
+	else:
+		prompt.text = "[Error al guardar]"
+
+
+func _load_game() -> void:
+	var loaded = SaveManagerScript.load_from_disk()
+	if loaded == null:
+		prompt.text = "[No hay save]"
+		return
+	_pending_load = loaded
+	_loaded_from_save = true
+	cleared_dungeons = loaded.get("cleared", [])
+	stats_kills = loaded.get("kills", 0)
+	stats_runs = loaded.get("runs", 0)
+	inventory = loaded.get("inventory", [])
+	prompt.text = "[Save cargado, regenerando...]"
+	_regenerate_overworld()
+
+
+func _mark_dungeon_cleared(poi_pos: Vector2i) -> void:
+	if not cleared_dungeons.has(poi_pos):
+		cleared_dungeons.append(poi_pos)
+		stats_runs += 1
+
+
+func _on_player_died() -> void:
+	# Pausa input del player (queda en su lugar)
+	# Sale del dungeon (volver al overworld) y muestra GameOver
+	if mode != Mode.OVERWORLD:
+		_exit_to_overworld()
+	var go = $HUD.get_node_or_null("GameOverScreen")
+	if go != null and go.has_method("show_death"):
+		go.show_death({
+			"kills": stats_kills,
+			"runs": stats_runs,
+			"cleared": cleared_dungeons.size(),
+		})
+
+
+func _on_respawn_requested() -> void:
+	# Respawn en Mata Ortiz, mantiene progreso (cleared, kills, inventory)
+	var spawn := _find_first_poi(OverworldScript.POIType.MATA_ORTIZ)
+	if spawn == Vector2i(-1, -1):
+		spawn = _find_safe_spawn(Vector2i(MAP_W / 2, MAP_H / 2))
+	player.set_tile_position(spawn)
+	if player.has_method("reset_hp"):
+		player.reset_hp()
+	_save_game()  # auto-save al respawn (anti-cheat)
+
+
+func _on_new_game_requested() -> void:
+	# Borra save y regenera todo desde 0
+	SaveManagerScript.delete_save()
+	cleared_dungeons.clear()
+	stats_kills = 0
+	stats_runs = 0
+	inventory.clear()
+	_pending_load.clear()
+	_loaded_from_save = false
+	# Reset XP + achievements + upgrades
+	if _xp_bar != null:
+		_xp_bar.set_state({"level": 1, "xp": 0})
+	if _achievements != null:
+		_achievements.set_state({"unlocked": []})
+	if player != null:
+		player.max_hp_bonus = 0
+		player.damage_bonus = 0
+		player.speed_bonus = 0.0
+		player.crit_chance = 0.10
+		if player.inventory != null:
+			player.inventory.from_array([])
+			player.inventory.add("tortilla", 3)
+			player.inventory.add("machete", 1)
+	if player.has_method("reset_hp"):
+		player.reset_hp()
+	_regenerate_overworld()
 
 
 func _nearest_poi_within(tile: Vector2i, radius: int):
