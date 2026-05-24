@@ -642,7 +642,8 @@ func _update_prompt() -> void:
 			_:
 				prompt.text = ""
 	elif mode == Mode.DUNGEON_PAQUIME:
-		if atlas == BSPScript.T_EXIT:
+		var p_atlas: Vector2i = player.get_current_atlas()
+		if p_atlas == BSPScript.T_EXIT:
 			prompt.text = "[SPACE] Salir al overworld"
 		else:
 			prompt.text = ""
