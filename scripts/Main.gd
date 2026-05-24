@@ -25,6 +25,8 @@ const ATLAS_OVERWORLD_COLS := 8
 const ATLAS_OVERWORLD_ROWS := 6
 const ATLAS_DESERT_COLS := 8
 const ATLAS_DESERT_ROWS := 8
+const ATLAS_AFUERA_COLS := 11
+const ATLAS_AFUERA_ROWS := 10
 const ATLAS_PAQUIME_COLS := 4
 const ATLAS_PAQUIME_ROWS := 4
 const ATLAS_CAVE_COLS := 8
@@ -174,6 +176,15 @@ func _build_overworld_tileset() -> TileSet:
 		for y in range(ATLAS_DESERT_ROWS):
 			src1.create_tile(Vector2i(x, y))
 	ts.add_source(src1, 1)
+
+	# Source 2: afuera_clean.png (vegetación: árboles, arbustos, flores, rocas, hongos)
+	var src2 := TileSetAtlasSource.new()
+	src2.texture = _load_texture("res://art/tiles/afuera_clean.png")
+	src2.texture_region_size = Vector2i(TILE_SOURCE, TILE_SOURCE)
+	for x in range(ATLAS_AFUERA_COLS):
+		for y in range(ATLAS_AFUERA_ROWS):
+			src2.create_tile(Vector2i(x, y))
+	ts.add_source(src2, 2)
 
 	return ts
 

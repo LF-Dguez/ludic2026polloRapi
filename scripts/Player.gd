@@ -145,19 +145,27 @@ func _can_stand_at(pos: Vector2) -> bool:
 
 
 func _is_impassable_overworld_explicit(src_id: int, atlas: Vector2i) -> bool:
-	# Source 0 (overworld atlas)
+	# Source 0 (overworld hand-drawn)
 	if src_id == 0:
-		# Barranca borde (0,2), abismo (1,2), río (6,2), pico (0,5)
-		if atlas.x == 0 and atlas.y == 2: return true
-		if atlas.x == 1 and atlas.y == 2: return true
-		if atlas.x == 6 and atlas.y == 2: return true
-		if atlas.x == 0 and atlas.y == 5: return true
-		# Stamps: adobe wall (0,4), cave rock (3,4), wood frame (5,4), roca sierra (6,1)
+		if atlas.x == 0 and atlas.y == 2: return true  # barranca borde
+		if atlas.x == 1 and atlas.y == 2: return true  # barranca abismo
+		if atlas.x == 6 and atlas.y == 2: return true  # río
+		if atlas.x == 0 and atlas.y == 5: return true  # pico
 		if atlas.x == 0 and atlas.y == 4: return true  # ADOBE_WALL
 		if atlas.x == 3 and atlas.y == 4: return true  # CAVE_ROCK
 		if atlas.x == 5 and atlas.y == 4: return true  # WOOD_FRAME
 		if atlas.x == 6 and atlas.y == 1: return true  # SIERRA_ROCA
-	# Source 1 (desert atlas) — todos pasables por default
+		return false
+	# Source 1 (desert atlas) — todos pasables
+	if src_id == 1:
+		return false
+	# Source 2 (afuera — vegetación). Impasables: bases de árboles + rocas grandes.
+	if src_id == 2:
+		# Bases de árboles: row 5, cols 0-5 (6 tiles, troncos visualmente grandes)
+		if atlas.y == 5 and atlas.x <= 5: return true
+		# Rocas grandes: row 8, cols 3-6
+		if atlas.y == 8 and atlas.x >= 3 and atlas.x <= 6: return true
+		return false  # arbustos, flores, hongos, tocones, hojas — passable
 	return false
 
 

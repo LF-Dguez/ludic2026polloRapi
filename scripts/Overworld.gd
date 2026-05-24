@@ -7,6 +7,7 @@ extends RefCounted
 # Source IDs (orden de adds al TileSet)
 const SRC_OVERWORLD := 0
 const SRC_DESERT := 1
+const SRC_AFUERA := 2  # Atlas vegetación (afuera_clean.png 11x10)
 
 enum Biome {
 	DESIERTO, LLANOS, SIERRA, BARRANCA, MINERO, RIO, MESA, PICO,
@@ -29,56 +30,112 @@ const BIOME_PRIMARY := {
 	Biome.PICO:     {"src": SRC_OVERWORLD, "atlas": Vector2i(0, 5)},
 }
 
-# Decoraciones por bioma
+# Decoraciones por bioma — ahora con vegetación del atlas "afuera" (SRC_AFUERA)
+# afuera_clean.png layout (11 cols x 10 rows):
+#   row 5 cols 0-5: BASES DE ÁRBOL grandes (IMPASABLES — ver Player.gd)
+#   row 5 cols 6-10: troncos caídos / ramas
+#   row 6 cols 0-7: arbustos verdes
+#   row 6 cols 7-10: arbustos secos
+#   row 7 cols 0-2: hongos rojos
+#   row 7 cols 4-10: flores (rojas, azules, moradas, blancas, amarillas)
+#   row 8 cols 0-2: matorrales secos
+#   row 8 cols 3-6: rocas grandes (IMPASABLES)
+#   row 8 cols 7-9: tocones
+#   row 9 cols 0-10: hojas, ramas pequeñas
 const BIOME_DECORS := {
 	Biome.DESIERTO: [
-		# Variantes del nuevo atlas dorado (rows 0-3 = stone fill)
+		# Variantes del atlas dorado
 		{"src": SRC_DESERT, "atlas": Vector2i(1, 0)},
 		{"src": SRC_DESERT, "atlas": Vector2i(2, 0)},
 		{"src": SRC_DESERT, "atlas": Vector2i(3, 0)},
 		{"src": SRC_DESERT, "atlas": Vector2i(0, 1)},
 		{"src": SRC_DESERT, "atlas": Vector2i(1, 1)},
 		{"src": SRC_DESERT, "atlas": Vector2i(2, 1)},
-		{"src": SRC_DESERT, "atlas": Vector2i(0, 2)},
-		{"src": SRC_DESERT, "atlas": Vector2i(1, 2)},
-		# + decoraciones atmosféricas del atlas viejo
+		# Decor atmosféricos del atlas viejo
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(2, 0)},  # sotol
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(3, 0)},  # lechuguilla
-		{"src": SRC_OVERWORLD, "atlas": Vector2i(4, 0)},  # calavera
+		{"src": SRC_OVERWORLD, "atlas": Vector2i(4, 0)},  # calavera vaca
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(6, 0)},  # cactus muerto
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(7, 0)},  # huesos
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(1, 5)},  # cardón
-		{"src": SRC_OVERWORLD, "atlas": Vector2i(2, 5)},  # rancho quemado
-		{"src": SRC_OVERWORLD, "atlas": Vector2i(7, 5)},  # monolito
+		# Vegetación seca/dura del atlas afuera (matorrales y ramas secas)
+		{"src": SRC_AFUERA, "atlas": Vector2i(0, 8)},  # matorral seco
+		{"src": SRC_AFUERA, "atlas": Vector2i(1, 8)},  # matorral seco 2
+		{"src": SRC_AFUERA, "atlas": Vector2i(2, 8)},  # matorral seco 3
+		{"src": SRC_AFUERA, "atlas": Vector2i(7, 6)},  # arbusto seco
+		{"src": SRC_AFUERA, "atlas": Vector2i(8, 6)},  # arbusto seco 2
+		{"src": SRC_AFUERA, "atlas": Vector2i(3, 8)},  # roca pequeña
+		{"src": SRC_AFUERA, "atlas": Vector2i(4, 8)},  # roca pequeña 2
 	],
 	Biome.LLANOS: [
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(1, 1)},  # mezquite
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(2, 1)},  # pasto alto
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(3, 5)},  # alambrada
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(4, 5)},  # fogata
-		{"src": SRC_OVERWORLD, "atlas": Vector2i(2, 5)},  # rancho quemado
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(6, 5)},  # huellas
+		# Vegetación llanos del atlas afuera
+		{"src": SRC_AFUERA, "atlas": Vector2i(0, 6)},  # arbusto verde
+		{"src": SRC_AFUERA, "atlas": Vector2i(1, 6)},  # arbusto verde 2
+		{"src": SRC_AFUERA, "atlas": Vector2i(2, 6)},  # arbusto verde 3
+		{"src": SRC_AFUERA, "atlas": Vector2i(3, 6)},  # arbusto verde 4
+		{"src": SRC_AFUERA, "atlas": Vector2i(4, 6)},  # arbusto verde 5
+		{"src": SRC_AFUERA, "atlas": Vector2i(5, 6)},  # arbusto verde 6
+		# Flores variadas
+		{"src": SRC_AFUERA, "atlas": Vector2i(4, 7)},  # flores azules
+		{"src": SRC_AFUERA, "atlas": Vector2i(5, 7)},  # flores moradas
+		{"src": SRC_AFUERA, "atlas": Vector2i(6, 7)},  # flores rosas
+		{"src": SRC_AFUERA, "atlas": Vector2i(7, 7)},  # flores blancas
+		{"src": SRC_AFUERA, "atlas": Vector2i(8, 7)},  # flores azules 2
+		{"src": SRC_AFUERA, "atlas": Vector2i(9, 7)},  # flores amarillas
+		{"src": SRC_AFUERA, "atlas": Vector2i(10, 7)}, # flores amarillas 2
+		{"src": SRC_AFUERA, "atlas": Vector2i(3, 8)},  # roca pequeña
 	],
 	Biome.SIERRA: [
-		{"src": SRC_OVERWORLD, "atlas": Vector2i(4, 1)},  # pino
-		{"src": SRC_OVERWORLD, "atlas": Vector2i(5, 1)},  # pino seco
-		{"src": SRC_OVERWORLD, "atlas": Vector2i(6, 1)},  # roca
-		{"src": SRC_OVERWORLD, "atlas": Vector2i(7, 1)},  # árbol muerto
-		{"src": SRC_OVERWORLD, "atlas": Vector2i(7, 5)},  # monolito
+		{"src": SRC_OVERWORLD, "atlas": Vector2i(6, 1)},  # roca sierra (impasable, mantiene)
+		# ÁRBOLES REALES (impasables) — reemplazan los pinos verde-triángulo que yo dibujé
+		{"src": SRC_AFUERA, "atlas": Vector2i(0, 5)},  # árbol grande 1
+		{"src": SRC_AFUERA, "atlas": Vector2i(1, 5)},  # árbol grande 2
+		{"src": SRC_AFUERA, "atlas": Vector2i(2, 5)},  # árbol grande 3
+		{"src": SRC_AFUERA, "atlas": Vector2i(3, 5)},  # árbol grande 4
+		{"src": SRC_AFUERA, "atlas": Vector2i(4, 5)},  # árbol grande 5
+		{"src": SRC_AFUERA, "atlas": Vector2i(5, 5)},  # árbol grande 6
+		# Tronco caído y ramas (passable)
+		{"src": SRC_AFUERA, "atlas": Vector2i(7, 5)},  # tronco caído
+		{"src": SRC_AFUERA, "atlas": Vector2i(8, 5)},  # rama
+		# Arbustos verdes (passable)
+		{"src": SRC_AFUERA, "atlas": Vector2i(0, 6)},
+		{"src": SRC_AFUERA, "atlas": Vector2i(1, 6)},
+		{"src": SRC_AFUERA, "atlas": Vector2i(4, 6)},
+		# Hongos rojos (zonas húmedas sierra)
+		{"src": SRC_AFUERA, "atlas": Vector2i(0, 7)},  # hongo rojo
+		{"src": SRC_AFUERA, "atlas": Vector2i(1, 7)},  # hongo
+		{"src": SRC_AFUERA, "atlas": Vector2i(2, 7)},  # hongos
+		# Tocones
+		{"src": SRC_AFUERA, "atlas": Vector2i(7, 8)},  # tocón
+		{"src": SRC_AFUERA, "atlas": Vector2i(8, 8)},  # tocón 2
 	],
 	Biome.BARRANCA: [
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(1, 2)},
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(2, 2)},
+		# Rocas grandes del atlas afuera (impasables — perfecto para barrancas)
+		{"src": SRC_AFUERA, "atlas": Vector2i(3, 8)},
+		{"src": SRC_AFUERA, "atlas": Vector2i(4, 8)},
+		{"src": SRC_AFUERA, "atlas": Vector2i(5, 8)},
+		{"src": SRC_AFUERA, "atlas": Vector2i(6, 8)},
 	],
 	Biome.MINERO: [
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(4, 2)},
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(5, 2)},
+		# Rocas mineras
+		{"src": SRC_AFUERA, "atlas": Vector2i(3, 8)},
+		{"src": SRC_AFUERA, "atlas": Vector2i(5, 8)},
 	],
 	Biome.RIO: [
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(7, 2)},
 	],
 	Biome.MESA: [
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(5, 0)},
+		{"src": SRC_AFUERA, "atlas": Vector2i(5, 8)},  # roca grande
 	],
 	Biome.PICO: [
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(0, 5)},
@@ -86,13 +143,13 @@ const BIOME_DECORS := {
 }
 
 const DECOR_PROBS := {
-	Biome.DESIERTO: 0.40,  # MUY VARIADO — el atlas dorado tiene muchas variantes
-	Biome.LLANOS:   0.20,
-	Biome.SIERRA:   0.28,
-	Biome.BARRANCA: 0.18,
+	Biome.DESIERTO: 0.40,
+	Biome.LLANOS:   0.35,  # subido — más flores y arbustos
+	Biome.SIERRA:   0.45,  # subido — bosque denso con árboles
+	Biome.BARRANCA: 0.25,
 	Biome.MINERO:   0.30,
 	Biome.RIO:      0.08,
-	Biome.MESA:     0.12,
+	Biome.MESA:     0.18,
 	Biome.PICO:     0.05,
 }
 
