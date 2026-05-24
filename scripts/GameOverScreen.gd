@@ -29,10 +29,10 @@ func _ready() -> void:
 	add_child(bg)
 
 	# Carga el atlas y construye frames (8 frames de 64x64)
+	# load() funciona en export — Image.load_from_file NO funciona con res:// en .pck
 	var path := "res://art/tiles/gameover.png"
-	var img := Image.load_from_file(ProjectSettings.globalize_path(path))
-	if img != null:
-		var src_tex := ImageTexture.create_from_image(img)
+	var src_tex: Texture2D = load(path) if ResourceLoader.exists(path) else null
+	if src_tex != null:
 		for i in range(N_FRAMES):
 			var at := AtlasTexture.new()
 			at.atlas = src_tex

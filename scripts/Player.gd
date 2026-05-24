@@ -459,11 +459,10 @@ func _spawn_slash_vfx(attack_dir: Vector2) -> void:
 		return
 	# Instancia un Sprite2D temporal con la textura del machete
 	var slash := Sprite2D.new()
-	# Cargamos la textura desde el archivo (el atlas Machete.png tiene varios frames de 64x64)
+	# load() funciona en export — Image.load_from_file no funciona con res:// en .pck
 	var tex_path := "res://sprites/Machete.png"
-	var img := Image.load_from_file(ProjectSettings.globalize_path(tex_path))
-	if img != null:
-		var full_tex := ImageTexture.create_from_image(img)
+	var full_tex: Texture2D = load(tex_path) if ResourceLoader.exists(tex_path) else null
+	if full_tex != null:
 		var at := AtlasTexture.new()
 		at.atlas = full_tex
 		at.region = Rect2(0, 0, 64, 64)  # primer frame

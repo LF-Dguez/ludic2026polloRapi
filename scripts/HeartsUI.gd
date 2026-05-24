@@ -19,11 +19,11 @@ var _frame_timer: float = 0.0
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var path := "res://art/tiles/hearts.png"
-	var img := Image.load_from_file(ProjectSettings.globalize_path(path))
-	if img == null:
+	# load() funciona en export Y editor (Image.load_from_file no funciona en .pck)
+	var src_tex: Texture2D = load(path) if ResourceLoader.exists(path) else null
+	if src_tex == null:
 		push_warning("HeartsUI: no pude cargar hearts.png")
 		return
-	var src_tex := ImageTexture.create_from_image(img)
 	# Construye AtlasTexture por cada frame (64x64 cada uno)
 	for i in range(N_FRAMES):
 		var at := AtlasTexture.new()

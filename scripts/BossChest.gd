@@ -66,9 +66,10 @@ func _ready() -> void:
 	add_child(_sprite)
 	# Luz dorada parpadeante (para hacerlo bien visible en la penumbra)
 	_light = PointLight2D.new()
-	var lt_img := Image.load_from_file(ProjectSettings.globalize_path("res://art/tiles/light_texture.png"))
-	if lt_img != null:
-		_light.texture = ImageTexture.create_from_image(lt_img)
+	# load() funciona en export — Image.load_from_file no funciona con res:// en .pck
+	var lt_path := "res://art/tiles/light_texture.png"
+	if ResourceLoader.exists(lt_path):
+		_light.texture = load(lt_path)
 	_light.color = Color(1.0, 0.85, 0.30)
 	_light.energy = 1.4
 	_light.texture_scale = 1.2
@@ -83,14 +84,14 @@ func _ready() -> void:
 
 
 func _try_load_cofre_sprite() -> Sprite2D:
+	# load() + ResourceLoader.exists() funcionan en export — FileAccess.file_exists
+	# NO encuentra archivos dentro del .pck packed.
 	var path := "res://art/tiles/cofre.png"
-	var abs_path := ProjectSettings.globalize_path(path)
-	if not FileAccess.file_exists(path):
+	if not ResourceLoader.exists(path):
 		return null
-	var img := Image.load_from_file(abs_path)
-	if img == null:
+	var tex: Texture2D = load(path)
+	if tex == null:
 		return null
-	var tex := ImageTexture.create_from_image(img)
 	var spr := Sprite2D.new()
 	spr.texture = tex
 	spr.centered = true
