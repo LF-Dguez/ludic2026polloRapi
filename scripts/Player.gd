@@ -26,10 +26,22 @@ var passable_decor: Dictionary = {}  # Vector2i → bool
 
 
 func _ready() -> void:
-	sprite = Sprite2D.new()
 	var img := Image.load_from_file(ProjectSettings.globalize_path(sprite_path))
+	var tex: Texture2D = null
 	if img != null:
-		sprite.texture = ImageTexture.create_from_image(img)
+		tex = ImageTexture.create_from_image(img)
+	# Outline sprite — copia oscura más grande detrás del sprite principal
+	# para contraste sobre dungeons oscuros y biomas tipo barranca.
+	var outline := Sprite2D.new()
+	outline.texture = tex
+	outline.centered = true
+	outline.scale = Vector2(1.14, 1.14)
+	outline.modulate = Color(0, 0, 0, 0.85)
+	outline.z_index = -1
+	add_child(outline)
+	# Sprite principal encima
+	sprite = Sprite2D.new()
+	sprite.texture = tex
 	sprite.centered = true
 	add_child(sprite)
 

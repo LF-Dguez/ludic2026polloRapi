@@ -235,7 +235,7 @@ func _regenerate_overworld() -> void:
 	world = ow.generate(MAP_W, MAP_H, current_seed)
 	var t_gen := Time.get_ticks_msec() - t0
 	t0 = Time.get_ticks_msec()
-	_paint_overworld(world)
+	await _paint_overworld(world)
 	var t_paint := Time.get_ticks_msec() - t0
 
 	var spawn_tile: Vector2i = _find_first_poi(OverworldScript.POIType.MATA_ORTIZ)
@@ -278,7 +278,8 @@ func _find_safe_spawn(origin: Vector2i) -> Vector2i:
 
 func _paint_overworld(w) -> void:
 	overworld_layer.clear()
-	# Decoding inline para performance: (src << 16) | (x << 8) | y
+	# Chunked: yield every ~60k cells para no freezear UI en mapas grandes (786k tiles)
+	var painted: int = 0
 	for y in range(w.height):
 		var row_off: int = y * w.width
 		for x in range(w.width):
@@ -286,6 +287,10 @@ func _paint_overworld(w) -> void:
 			var src: int = (v >> 16) & 0xff
 			var atlas: Vector2i = Vector2i((v >> 8) & 0xff, v & 0xff)
 			overworld_layer.set_cell(Vector2i(x, y), src, atlas)
+			painted += 1
+			if painted >= 60000:
+				painted = 0
+				await get_tree().process_frame
 
 
 func _find_first_poi(type: int) -> Vector2i:

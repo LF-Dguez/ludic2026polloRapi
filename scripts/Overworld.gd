@@ -317,13 +317,110 @@ func generate(w: int, h: int, seed_value: int) -> World:
 		_stamp_poi(world, poi)
 
 	# === Pase 5: pinta tiles bridge desde world.bridges (tracking explícito) ===
-	# Evita false-positives donde barranca natural toca río pero NO es un puente.
 	for bp in world.bridges:
 		var bxy: Vector2i = bp
 		if world.in_bounds(bxy.x, bxy.y):
 			world.set_tile(bxy.x, bxy.y, Vector2i(2, 2))  # T_BRIDGE
 
+	# === Pase 6: garantiza al menos un dungeon entrance alcanzable desde spawn ===
+	_ensure_dungeon_reachable(world)
+
 	return world
+
+
+# Flood-fill desde Mata Ortiz; si NO hay dungeon alcanzable, carve path al más cercano.
+func _ensure_dungeon_reachable(world: World) -> void:
+	var spawn: Vector2i = Vector2i(world.width / 2, world.height / 2)
+	for poi in world.pois:
+		if poi.type == POIType.MATA_ORTIZ:
+			spawn = poi.pos
+			break
+	# Recolectar dungeons
+	var dungeons: Array = []
+	for poi in world.pois:
+		if poi.type == POIType.ENTRADA_PAQUIME or poi.type == POIType.ENTRADA_TARAHUMARA or poi.type == POIType.ENTRADA_NAICA:
+			dungeons.append(poi)
+	if dungeons.is_empty():
+		return
+	# BFS over passable
+	var visited: Dictionary = {}
+	var queue: Array = [spawn]
+	visited[spawn] = true
+	while not queue.is_empty():
+		var cur: Vector2i = queue.pop_front()
+		for off in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var nxt: Vector2i = cur + off
+			if not world.in_bounds(nxt.x, nxt.y):
+				continue
+			if visited.has(nxt):
+				continue
+			if not _is_overworld_passable(world, nxt.x, nxt.y):
+				continue
+			visited[nxt] = true
+			queue.append(nxt)
+	# ¿Algún dungeon entrance alcanzable?
+	var nearest_unreachable = null
+	var best_d: int = 999999999
+	for d_poi in dungeons:
+		if visited.has(d_poi.pos):
+			return  # ya hay uno alcanzable, listo
+		var dx: int = d_poi.pos.x - spawn.x
+		var dy: int = d_poi.pos.y - spawn.y
+		var dsq: int = dx * dx + dy * dy
+		if dsq < best_d:
+			best_d = dsq
+			nearest_unreachable = d_poi
+	# Ninguno alcanzable — force carve path al más cercano
+	if nearest_unreachable != null:
+		_carve_overworld_emergency_path(world, spawn, nearest_unreachable.pos)
+
+
+func _is_overworld_passable(world: World, x: int, y: int) -> bool:
+	var b: int = world.get_biome(x, y)
+	if b == Biome.RIO or b == Biome.BARRANCA or b == Biome.PICO:
+		return false
+	var raw: int = world.get_tile_raw(x, y)
+	var src: int = (raw >> 16) & 0xff
+	if src != 0:
+		return true  # desert atlas, passable
+	var atlas := Vector2i((raw >> 8) & 0xff, raw & 0xff)
+	# Impasables específicos
+	if atlas == T_ADOBE_WALL: return false
+	if atlas == T_CAVE_ROCK: return false
+	if atlas == T_WOOD_FRAME: return false
+	if atlas.x == 6 and atlas.y == 1: return false  # roca sierra
+	if atlas.x == 0 and atlas.y == 2: return false  # barranca borde
+	if atlas.x == 1 and atlas.y == 2: return false  # barranca abismo
+	if atlas.x == 6 and atlas.y == 2: return false  # río
+	if atlas.x == 0 and atlas.y == 5: return false  # pico
+	return true
+
+
+# Carve un camino de emergencia (3 tiles wide) por Bresenham, convirtiendo
+# todo a LLANOS + DIRT_PATH para garantizar accesibilidad.
+func _carve_overworld_emergency_path(world: World, a: Vector2i, b: Vector2i) -> void:
+	var x0: int = a.x; var y0: int = a.y
+	var x1: int = b.x; var y1: int = b.y
+	var dx: int = absi(x1 - x0); var dy: int = absi(y1 - y0)
+	var sx: int = 1 if x0 < x1 else -1
+	var sy: int = 1 if y0 < y1 else -1
+	var err: int = dx - dy
+	var max_steps: int = (dx + dy) * 3
+	var steps: int = 0
+	while (x0 != x1 or y0 != y1) and steps < max_steps:
+		steps += 1
+		for ddy in [-1, 0, 1]:
+			for ddx in [-1, 0, 1]:
+				var px: int = x0 + ddx
+				var py: int = y0 + ddy
+				if world.in_bounds(px, py):
+					var bb: int = world.get_biome(px, py)
+					if bb == Biome.RIO or bb == Biome.BARRANCA or bb == Biome.PICO:
+						world.set_biome(px, py, Biome.LLANOS)
+						world.set_tile(px, py, T_DIRT_PATH)
+		var e2: int = 2 * err
+		if e2 > -dy: err -= dy; x0 += sx
+		if e2 < dx: err += dx; y0 += sy
 
 
 func _carve_river_natural(world: World, waypoints: Array, base_width: int, rng: RandomNumberGenerator) -> void:
@@ -689,6 +786,15 @@ func _stamp_mision(world: World, center: Vector2i) -> void:
 				world.set_tile(x, y, T_ADOBE_WALL)
 			else:
 				world.set_tile(x, y, T_CREAM_FLOOR)
+
+	# Esquinas internas del bounding box 7x7 (fuera de la cruz) → roca para
+	# definir visualmente la silueta cruciforme contra el atrium crema.
+	for cdy in [-3, -2, 2, 3]:
+		for cdx in [-3, -2, 2, 3]:
+			var ex: int = center.x + cdx
+			var ey: int = center.y + cdy
+			if world.in_bounds(ex, ey):
+				world.set_tile(ex, ey, Vector2i(6, 1))  # roca sierra (banca/piedra)
 
 	# Altar central
 	world.set_tile(center.x, center.y, POI_TILE[POIType.MISION])

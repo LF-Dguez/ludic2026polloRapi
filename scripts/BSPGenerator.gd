@@ -92,7 +92,55 @@ func generate(w: int, h: int, seed_value: int) -> Dungeon:
 	# Marca puertas T donde corredor toca cuarto
 	_place_doors()
 
+	# Garantiza conectividad entrance↔exit (flood-fill, force-carve si necesario)
+	_ensure_entrance_exit_connectivity()
+
 	return d
+
+
+func _ensure_entrance_exit_connectivity() -> void:
+	var entrance_idx: int = -1
+	var exit_idx: int = -1
+	for i in range(d.room_tags.size()):
+		if d.room_tags[i] == "entrance":
+			entrance_idx = i
+		elif d.room_tags[i] == "exit":
+			exit_idx = i
+	if entrance_idx == -1 or exit_idx == -1 or entrance_idx == exit_idx:
+		return
+	var er: Rect2i = d.rooms[entrance_idx]
+	var xr: Rect2i = d.rooms[exit_idx]
+	var entrance_pos := Vector2i(er.position.x + er.size.x / 2, er.position.y + er.size.y / 2)
+	var exit_pos := Vector2i(xr.position.x + xr.size.x / 2, xr.position.y + xr.size.y / 2)
+	# BFS sobre tiles passable
+	var visited: Dictionary = {}
+	var queue: Array = [entrance_pos]
+	visited[entrance_pos] = true
+	var found: bool = false
+	while not queue.is_empty():
+		var cur: Vector2i = queue.pop_front()
+		if cur == exit_pos:
+			found = true
+			break
+		for off in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var next: Vector2i = cur + off
+			if next.x < 0 or next.x >= d.width or next.y < 0 or next.y >= d.height:
+				continue
+			if visited.has(next):
+				continue
+			if not _is_passable_dungeon_tile(d.get_tile(next.x, next.y)):
+				continue
+			visited[next] = true
+			queue.append(next)
+	if found:
+		return
+	# Exit no alcanzable — carve corredor directo
+	_carve_corridor(entrance_pos, exit_pos)
+
+
+func _is_passable_dungeon_tile(t: Vector2i) -> bool:
+	# T_WALL, T_VOID, T_WATER son impasables; el resto sí
+	return t != T_WALL and t != T_VOID and t != T_WATER
 
 
 func _split(leaf: Leaf) -> void:
