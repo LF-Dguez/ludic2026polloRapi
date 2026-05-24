@@ -11,6 +11,7 @@ signal quit_pressed
 var _title_lbl: Label = null
 var _subtitle_lbl: Label = null
 var _t: float = 0.0
+var _input_consumed: bool = false
 
 
 func _ready() -> void:
@@ -119,19 +120,31 @@ func _process(delta: float) -> void:
 		_title_lbl.pivot_offset = _title_lbl.size * 0.5
 
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
+	# _input se llama ANTES que _unhandled_input — captura primero que Main.gd
+	if _input_consumed:
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
-			KEY_SPACE, KEY_ENTER:
+			KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
+				_input_consumed = true
 				start_pressed.emit()
 				get_viewport().set_input_as_handled()
 			KEY_C:
 				if FileAccess.file_exists("user://save.cfg"):
+					_input_consumed = true
 					load_pressed.emit()
 					get_viewport().set_input_as_handled()
 			KEY_ESCAPE:
+				_input_consumed = true
 				quit_pressed.emit()
 				get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton and event.pressed:
+		# Click izquierdo también arranca el juego
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			_input_consumed = true
+			start_pressed.emit()
+			get_viewport().set_input_as_handled()
 
 
 func dismiss() -> void:
