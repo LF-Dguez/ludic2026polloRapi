@@ -22,6 +22,10 @@ z_index = -100
 [node name="OverworldLayer" type="TileMapLayer" parent="."]
 scale = Vector2(2, 2)
 
+[node name="OverworldDecorLayer" type="TileMapLayer" parent="."]
+scale = Vector2(2, 2)
+z_index = 1
+
 [node name="DungeonLayer" type="TileMapLayer" parent="."]
 visible = false
 scale = Vector2(2, 2)

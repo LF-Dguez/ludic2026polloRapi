@@ -27,6 +27,8 @@ const ATLAS_DESERT_COLS := 8
 const ATLAS_DESERT_ROWS := 8
 const ATLAS_AFUERA_COLS := 11
 const ATLAS_AFUERA_ROWS := 10
+const ATLAS_TREES_COLS := 8
+const ATLAS_TREES_ROWS := 1
 const ATLAS_PAQUIME_COLS := 4
 const ATLAS_PAQUIME_ROWS := 4
 const ATLAS_CAVE_COLS := 8
@@ -59,6 +61,7 @@ enum Mode { OVERWORLD, DUNGEON_PAQUIME, CAVE_TARAHUMARA, MINE_NAICA }
 @onready var canvas_modulate: CanvasModulate = $CanvasModulate
 @onready var dark_bg: ColorRect = $DarkBG
 @onready var overworld_layer: TileMapLayer = $OverworldLayer
+@onready var overworld_decor_layer: TileMapLayer = $OverworldDecorLayer
 @onready var dungeon_layer: TileMapLayer = $DungeonLayer
 @onready var cave_layer: TileMapLayer = $CaveLayer
 @onready var mines_layer: TileMapLayer = $MinesLayer
@@ -95,6 +98,8 @@ var active_dungeon_poi: Variant = null
 
 func _ready() -> void:
 	overworld_layer.tile_set = _build_overworld_tileset()
+	# Decor layer comparte el mismo TileSet (3 sources)
+	overworld_decor_layer.tile_set = overworld_layer.tile_set
 	# Dungeons: source 0 = walls atlas, source 1 = floor tiles
 	dungeon_layer.tile_set = _build_dual_tileset(
 		"res://art/tiles/paquime_tiles.png", ATLAS_PAQUIME_COLS, ATLAS_PAQUIME_ROWS,
@@ -118,6 +123,7 @@ func _ready() -> void:
 	_apply_minimap_size()
 	# Pasa referencias al jugador
 	player.overworld_layer = overworld_layer
+	player.overworld_decor_layer = overworld_decor_layer
 	player.dungeon_layer = dungeon_layer
 	player.cave_layer = cave_layer
 	player.mines_layer = mines_layer
@@ -177,7 +183,7 @@ func _build_overworld_tileset() -> TileSet:
 			src1.create_tile(Vector2i(x, y))
 	ts.add_source(src1, 1)
 
-	# Source 2: afuera_clean.png (vegetación: árboles, arbustos, flores, rocas, hongos)
+	# Source 2: afuera_clean.png (vegetación: arbustos, flores, rocas, hongos, tocones)
 	var src2 := TileSetAtlasSource.new()
 	src2.texture = _load_texture("res://art/tiles/afuera_clean.png")
 	src2.texture_region_size = Vector2i(TILE_SOURCE, TILE_SOURCE)
@@ -185,6 +191,15 @@ func _build_overworld_tileset() -> TileSet:
 		for y in range(ATLAS_AFUERA_ROWS):
 			src2.create_tile(Vector2i(x, y))
 	ts.add_source(src2, 2)
+
+	# Source 3: trees_topdown.png — árboles top-down propios con canopy real
+	var src3 := TileSetAtlasSource.new()
+	src3.texture = _load_texture("res://art/tiles/trees_topdown.png")
+	src3.texture_region_size = Vector2i(TILE_SOURCE, TILE_SOURCE)
+	for x in range(ATLAS_TREES_COLS):
+		for y in range(ATLAS_TREES_ROWS):
+			src3.create_tile(Vector2i(x, y))
+	ts.add_source(src3, 3)
 
 	return ts
 
@@ -228,6 +243,7 @@ func _regenerate_overworld() -> void:
 	regenerating = true
 	mode = Mode.OVERWORLD
 	overworld_layer.visible = true
+	overworld_decor_layer.visible = true
 	dungeon_layer.visible = false
 	cave_layer.visible = false
 	mines_layer.visible = false
@@ -289,15 +305,24 @@ func _find_safe_spawn(origin: Vector2i) -> Vector2i:
 
 func _paint_overworld(w) -> void:
 	overworld_layer.clear()
-	# Chunked: yield every ~60k cells para no freezear UI en mapas grandes (786k tiles)
+	overworld_decor_layer.clear()
+	# Chunked: yield every ~60k cells. Pinta BASE en overworld_layer,
+	# DECOR (con fondo transparente) en overworld_decor_layer encima.
 	var painted: int = 0
 	for y in range(w.height):
 		var row_off: int = y * w.width
 		for x in range(w.width):
+			# Base
 			var v: int = w.tiles[row_off + x]
 			var src: int = (v >> 16) & 0xff
 			var atlas: Vector2i = Vector2i((v >> 8) & 0xff, v & 0xff)
 			overworld_layer.set_cell(Vector2i(x, y), src, atlas)
+			# Decor (solo si no es sentinel 0xff)
+			var dv: int = w.decor_tiles[row_off + x]
+			var dsrc: int = (dv >> 16) & 0xff
+			if dsrc != 0xff:
+				var datlas: Vector2i = Vector2i((dv >> 8) & 0xff, dv & 0xff)
+				overworld_decor_layer.set_cell(Vector2i(x, y), dsrc, datlas)
 			painted += 1
 			if painted >= 60000:
 				painted = 0
@@ -316,6 +341,7 @@ func _find_first_poi(type: int) -> Vector2i:
 func _enter_paquime_dungeon(poi) -> void:
 	mode = Mode.DUNGEON_PAQUIME
 	overworld_layer.visible = false
+	overworld_decor_layer.visible = false
 	dungeon_layer.visible = true
 	cave_layer.visible = false
 	mines_layer.visible = false
@@ -385,6 +411,7 @@ func _paint_dungeon(dun) -> void:
 func _enter_cave_dungeon(poi) -> void:
 	mode = Mode.CAVE_TARAHUMARA
 	overworld_layer.visible = false
+	overworld_decor_layer.visible = false
 	dungeon_layer.visible = false
 	cave_layer.visible = true
 	mines_layer.visible = false
@@ -441,6 +468,7 @@ func _paint_cave(c) -> void:
 func _enter_mine_dungeon(poi) -> void:
 	mode = Mode.MINE_NAICA
 	overworld_layer.visible = false
+	overworld_decor_layer.visible = false
 	dungeon_layer.visible = false
 	cave_layer.visible = false
 	mines_layer.visible = true
@@ -502,6 +530,7 @@ func _paint_mine(m) -> void:
 func _exit_to_overworld() -> void:
 	mode = Mode.OVERWORLD
 	overworld_layer.visible = true
+	overworld_decor_layer.visible = true
 	dungeon_layer.visible = false
 	cave_layer.visible = false
 	mines_layer.visible = false

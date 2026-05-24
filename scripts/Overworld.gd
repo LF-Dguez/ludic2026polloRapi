@@ -8,6 +8,9 @@ extends RefCounted
 const SRC_OVERWORLD := 0
 const SRC_DESERT := 1
 const SRC_AFUERA := 2  # Atlas vegetación (afuera_clean.png 11x10)
+const SRC_TREES := 3   # Árboles top-down generados (trees_topdown.png 8x1)
+# trees_topdown index: 0=pino oscuro, 1=encina, 2=sabino, 3=cardón,
+# 4=mezquite, 5=palo verde, 6=árbol seco, 7=pino claro
 
 enum Biome {
 	DESIERTO, LLANOS, SIERRA, BARRANCA, MINERO, RIO, MESA, PICO,
@@ -44,6 +47,10 @@ const BIOME_PRIMARY := {
 #   row 9 cols 0-10: hojas, ramas pequeñas
 const BIOME_DECORS := {
 	Biome.DESIERTO: [
+		# Cardón top-down (estrella verde) y palo verde — árboles del desierto chihuahuense
+		{"src": SRC_TREES, "atlas": Vector2i(3, 0)},  # cardón (impasable)
+		{"src": SRC_TREES, "atlas": Vector2i(4, 0)},  # mezquite (impasable)
+		{"src": SRC_TREES, "atlas": Vector2i(5, 0)},  # palo verde (impasable)
 		# Variantes del atlas dorado
 		{"src": SRC_DESERT, "atlas": Vector2i(1, 0)},
 		{"src": SRC_DESERT, "atlas": Vector2i(2, 0)},
@@ -91,28 +98,28 @@ const BIOME_DECORS := {
 		{"src": SRC_AFUERA, "atlas": Vector2i(3, 8)},  # roca pequeña
 	],
 	Biome.SIERRA: [
-		{"src": SRC_OVERWORLD, "atlas": Vector2i(6, 1)},  # roca sierra (impasable, mantiene)
-		# ÁRBOLES REALES (impasables) — reemplazan los pinos verde-triángulo que yo dibujé
-		{"src": SRC_AFUERA, "atlas": Vector2i(0, 5)},  # árbol grande 1
-		{"src": SRC_AFUERA, "atlas": Vector2i(1, 5)},  # árbol grande 2
-		{"src": SRC_AFUERA, "atlas": Vector2i(2, 5)},  # árbol grande 3
-		{"src": SRC_AFUERA, "atlas": Vector2i(3, 5)},  # árbol grande 4
-		{"src": SRC_AFUERA, "atlas": Vector2i(4, 5)},  # árbol grande 5
-		{"src": SRC_AFUERA, "atlas": Vector2i(5, 5)},  # árbol grande 6
-		# Tronco caído y ramas (passable)
-		{"src": SRC_AFUERA, "atlas": Vector2i(7, 5)},  # tronco caído
-		{"src": SRC_AFUERA, "atlas": Vector2i(8, 5)},  # rama
-		# Arbustos verdes (passable)
+		# ÁRBOLES TOP-DOWN REALES con canopy visible (impasables)
+		{"src": SRC_TREES, "atlas": Vector2i(0, 0)},  # pino oscuro
+		{"src": SRC_TREES, "atlas": Vector2i(0, 0)},  # repeat para weight
+		{"src": SRC_TREES, "atlas": Vector2i(1, 0)},  # encina
+		{"src": SRC_TREES, "atlas": Vector2i(2, 0)},  # sabino
+		{"src": SRC_TREES, "atlas": Vector2i(6, 0)},  # árbol seco
+		{"src": SRC_TREES, "atlas": Vector2i(7, 0)},  # pino claro
+		{"src": SRC_TREES, "atlas": Vector2i(7, 0)},  # repeat
+		# Rocas grandes sierra (impasables)
+		{"src": SRC_AFUERA, "atlas": Vector2i(3, 8)},
+		{"src": SRC_AFUERA, "atlas": Vector2i(5, 8)},
+		# Sotobosque: arbustos del afuera (passable)
 		{"src": SRC_AFUERA, "atlas": Vector2i(0, 6)},
 		{"src": SRC_AFUERA, "atlas": Vector2i(1, 6)},
 		{"src": SRC_AFUERA, "atlas": Vector2i(4, 6)},
-		# Hongos rojos (zonas húmedas sierra)
-		{"src": SRC_AFUERA, "atlas": Vector2i(0, 7)},  # hongo rojo
-		{"src": SRC_AFUERA, "atlas": Vector2i(1, 7)},  # hongo
-		{"src": SRC_AFUERA, "atlas": Vector2i(2, 7)},  # hongos
-		# Tocones
-		{"src": SRC_AFUERA, "atlas": Vector2i(7, 8)},  # tocón
-		{"src": SRC_AFUERA, "atlas": Vector2i(8, 8)},  # tocón 2
+		# Hongos rojos
+		{"src": SRC_AFUERA, "atlas": Vector2i(0, 7)},
+		{"src": SRC_AFUERA, "atlas": Vector2i(1, 7)},
+		{"src": SRC_AFUERA, "atlas": Vector2i(2, 7)},
+		# Tocones (passable)
+		{"src": SRC_AFUERA, "atlas": Vector2i(7, 8)},
+		{"src": SRC_AFUERA, "atlas": Vector2i(8, 8)},
 	],
 	Biome.BARRANCA: [
 		{"src": SRC_OVERWORLD, "atlas": Vector2i(1, 2)},
@@ -181,7 +188,8 @@ class World:
 	var width: int
 	var height: int
 	var biomes: PackedInt32Array
-	var tiles: PackedInt32Array  # packed: (src<<16) | (x<<8) | y
+	var tiles: PackedInt32Array        # BASE layer: bioma primary o POI structure
+	var decor_tiles: PackedInt32Array  # OVERLAY: decoraciones con bg transparente
 	var pois: Array = []
 	var bridges: Array = []  # Array[Vector2i] — posiciones exactas de tiles puente
 	var seed_value: int
@@ -199,6 +207,18 @@ class World:
 		# Default source 0 (overworld atlas)
 		tiles[y * width + x] = ((atlas.x & 0xff) << 8) | (atlas.y & 0xff)
 
+	func set_decor(x: int, y: int, src: int, atlas: Vector2i) -> void:
+		# Layer overlay: decoración con fondo transparente sobre base
+		decor_tiles[y * width + x] = ((src & 0xff) << 16) | ((atlas.x & 0xff) << 8) | (atlas.y & 0xff)
+
+	func clear_decor(x: int, y: int) -> void:
+		# Sentinel: src 0xff = no decoración
+		decor_tiles[y * width + x] = 0xff << 16
+
+	func has_decor(x: int, y: int) -> bool:
+		var raw: int = decor_tiles[y * width + x]
+		return ((raw >> 16) & 0xff) != 0xff
+
 	func get_tile_raw(x: int, y: int) -> int:
 		return tiles[y * width + x]
 
@@ -215,6 +235,11 @@ func generate(w: int, h: int, seed_value: int) -> World:
 	world.biomes.resize(w * h)
 	world.tiles = PackedInt32Array()
 	world.tiles.resize(w * h)
+	world.decor_tiles = PackedInt32Array()
+	world.decor_tiles.resize(w * h)
+	# Init decor layer con sentinel (0xff << 16 = no decor)
+	for i in range(w * h):
+		world.decor_tiles[i] = 0xff << 16
 	world.pois = []
 	world.bridges = []
 
@@ -356,17 +381,16 @@ func generate(w: int, h: int, seed_value: int) -> World:
 		for x in range(w):
 			var biome: int = world.get_biome(x, y)
 			var primary: Dictionary = BIOME_PRIMARY[biome]
-			var src: int = primary["src"]
-			var atlas: Vector2i = primary["atlas"]
+			# BASE siempre el primary del bioma (LLANOS verde, DESIERTO dorado, etc.)
+			world.set_tile_pair(x, y, primary["src"], primary["atlas"])
+			# DECOR opcional como OVERLAY (capa separada con fondo transparente)
 			var roll: float = (n_decor.get_noise_2d(x, y) + 1.0) * 0.5
 			var prob: float = DECOR_PROBS.get(biome, 0.0)
 			if roll < prob and BIOME_DECORS.has(biome) and not BIOME_DECORS[biome].is_empty():
 				var decors: Array = BIOME_DECORS[biome]
 				var idx: int = int(roll * 10000.0) % decors.size()
 				var d: Dictionary = decors[idx]
-				src = d["src"]
-				atlas = d["atlas"]
-			world.set_tile_pair(x, y, src, atlas)
+				world.set_decor(x, y, d["src"], d["atlas"])
 
 	# === Pase 4: POIs + stamps ===
 	_place_pois_chihuahua(world, rng)

@@ -13,6 +13,7 @@ const HALF_HITBOX := 10
 var sprite: Sprite2D
 
 var overworld_layer: TileMapLayer
+var overworld_decor_layer: TileMapLayer
 var dungeon_layer: TileMapLayer
 var cave_layer: TileMapLayer
 var mines_layer: TileMapLayer
@@ -101,13 +102,19 @@ func _can_stand_at(pos: Vector2) -> bool:
 		var src_id: int = layer.get_cell_source_id(Vector2i(tx, ty))
 		var atlas: Vector2i = layer.get_cell_atlas_coords(Vector2i(tx, ty))
 		if mode == 0:
-			# Overworld
+			# Overworld: check tanto base layer como decor layer overlay
 			if src_id == -1:
 				return false
-			# Chequeo explícito por (src_id, atlas.x, atlas.y) en vez de `in` para evitar
-			# weirdness de Variant comparison.
 			if _is_impassable_overworld_explicit(src_id, atlas):
 				return false
+			# También check decor overlay (árboles, rocas grandes están en decor layer)
+			var decor_layer: TileMapLayer = overworld_decor_layer if overworld_decor_layer != null else null
+			if decor_layer != null:
+				var d_src: int = decor_layer.get_cell_source_id(Vector2i(tx, ty))
+				if d_src != -1:
+					var d_atlas: Vector2i = decor_layer.get_cell_atlas_coords(Vector2i(tx, ty))
+					if _is_impassable_overworld_explicit(d_src, d_atlas):
+						return false
 		elif mode == 1:
 			# Paquimé: src 0 = atlas paquime. WHITELIST de tiles passable;
 			# todo lo demás src 0 (incluyendo T_WALL/T_WATER/T_VOID y cualquier
@@ -161,11 +168,14 @@ func _is_impassable_overworld_explicit(src_id: int, atlas: Vector2i) -> bool:
 		return false
 	# Source 2 (afuera — vegetación). Impasables: bases de árboles + rocas grandes.
 	if src_id == 2:
-		# Bases de árboles: row 5, cols 0-5 (6 tiles, troncos visualmente grandes)
+		# Bases de árboles row 5 cols 0-5 (no las uso pero por si acaso)
 		if atlas.y == 5 and atlas.x <= 5: return true
 		# Rocas grandes: row 8, cols 3-6
 		if atlas.y == 8 and atlas.x >= 3 and atlas.x <= 6: return true
-		return false  # arbustos, flores, hongos, tocones, hojas — passable
+		return false
+	# Source 3 (trees_topdown) — TODOS los árboles son impasables
+	if src_id == 3:
+		return true
 	return false
 
 
