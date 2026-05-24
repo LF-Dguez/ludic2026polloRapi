@@ -353,39 +353,22 @@ func generate(w: int, h: int, seed_value: int) -> World:
 
 			world.set_biome(x, y, biome)
 
-	# === Pase 2: Ríos MÁS ANCHOS con curvas perlin naturales + puentes ===
-	# Conchos principal — ancho base 3 (era 2), tributarios 2 (era 1).
-	_carve_river_natural(world, [
-		Vector2i(int(w * 0.12), int(h * 0.85)),
-		Vector2i(int(w * 0.22), int(h * 0.72)),
-		Vector2i(int(w * 0.32), int(h * 0.65)),
-		Vector2i(int(w * 0.42), int(h * 0.58)),
-		Vector2i(int(w * 0.52), int(h * 0.50)),
-		Vector2i(int(w * 0.62), int(h * 0.45)),
-		Vector2i(int(w * 0.72), int(h * 0.38)),
-		Vector2i(int(w * 0.82), int(h * 0.30)),
-		Vector2i(int(w * 0.95), int(h * 0.18)),
-	], 3, rng)  # Conchos: ancho 3-4 según noise
-	_carve_river_natural(world, [
-		Vector2i(int(w * 0.58), int(h * 0.92)),
-		Vector2i(int(w * 0.58), int(h * 0.80)),
-		Vector2i(int(w * 0.60), int(h * 0.68)),
-		Vector2i(int(w * 0.60), int(h * 0.55)),
-	], 2, rng)
-	_carve_river_natural(world, [
-		Vector2i(int(w * 0.18), int(h * 0.08)),
-		Vector2i(int(w * 0.25), int(h * 0.12)),
-		Vector2i(int(w * 0.32), int(h * 0.18)),
-		Vector2i(int(w * 0.32), int(h * 0.25)),
-	], 2, rng)
-	_carve_river_natural(world, [
-		Vector2i(int(w * 0.45), int(h * 0.10)),
-		Vector2i(int(w * 0.52), int(h * 0.30)),
-		Vector2i(int(w * 0.55), int(h * 0.48)),
-	], 2, rng)
+	# === Pase 2: RÍOS PROCEDURALES (random count, random source/sink, random waypoints) ===
+	# 1 río principal (Conchos-like, sirve como anchor SW→NE) + N tributarios random.
+	# Garantiza al menos 1 río ancho cruzando + diversidad cada seed.
+	_carve_river_natural(world, _generate_main_river_waypoints(w, h, rng), 3, rng)
+	var num_tributaries: int = 2 + rng.randi() % 4  # 2-5 tributarios
+	for _ti in range(num_tributaries):
+		var wps: Array = _generate_random_river_waypoints(w, h, rng)
+		var wid: int = 1 + rng.randi() % 3  # 1-3 tiles ancho
+		_carve_river_natural(world, wps, wid, rng)
 
-	# === Pase 2.5: Puentes PROCEDURALES — recolecta tiles de río, elige K random con min-dist ===
-	_place_random_bridges(world, rng, 7, 22)
+	# === Pase 2.1: LAGOS (lagunas chihuahuenses: Bustillos, Saúz, etc.) ===
+	var num_lakes: int = 2 + rng.randi() % 3  # 2-4 lagos
+	_carve_lakes(world, rng, num_lakes)
+
+	# === Pase 2.5: Puentes V2 — verifica ambos lados pasables + min-dist mayor ===
+	_place_random_bridges_v2(world, rng, 8, 30)
 
 	# === Pase 3: variantes (decoraciones) ===
 	var n_decor := FastNoiseLite.new()
@@ -402,6 +385,9 @@ func generate(w: int, h: int, seed_value: int) -> World:
 			bh = (bh ^ (bh >> 13)) & 0x7fffffff
 			var variant: int = bh % 4
 			world.set_tile_pair(x, y, SRC_BASES, Vector2i(col, variant))
+			# Skip decor en agua (no flores/arbustos en RIO/lagos)
+			if biome == Biome.RIO:
+				continue
 			# DECOR opcional como OVERLAY
 			var roll: float = (n_decor.get_noise_2d(x, y) + 1.0) * 0.5
 			var prob: float = DECOR_PROBS.get(biome, 0.0)
@@ -571,6 +557,212 @@ func _carve_overworld_emergency_path(world: World, a: Vector2i, b: Vector2i) -> 
 		var e2: int = 2 * err
 		if e2 > -dy: err -= dy; x0 += sx
 		if e2 < dx: err += dx; y0 += sy
+
+
+# Genera waypoints del río principal: SW→NE general flow (Río Conchos-like)
+# pero con randomización significativa cada seed.
+func _generate_main_river_waypoints(w: int, h: int, rng: RandomNumberGenerator) -> Array:
+	# Source: SW quarter, posición randomizada
+	var sx: int = rng.randi_range(int(w * 0.05), int(w * 0.25))
+	var sy: int = rng.randi_range(int(h * 0.65), int(h * 0.92))
+	# Sink: NE quarter, posición randomizada
+	var ex: int = rng.randi_range(int(w * 0.75), int(w * 0.95))
+	var ey: int = rng.randi_range(int(h * 0.05), int(h * 0.35))
+	# 5-9 waypoints intermedios con perturbación lateral
+	var num_wps: int = 5 + rng.randi() % 5
+	var wps: Array = [Vector2i(sx, sy)]
+	for j in range(1, num_wps):
+		var t: float = float(j) / float(num_wps)
+		var lin_x: float = lerp(float(sx), float(ex), t)
+		var lin_y: float = lerp(float(sy), float(ey), t)
+		# Perturbación lateral random
+		var off_x: float = rng.randf_range(-w * 0.12, w * 0.12)
+		var off_y: float = rng.randf_range(-h * 0.10, h * 0.10)
+		wps.append(Vector2i(int(lin_x + off_x), int(lin_y + off_y)))
+	wps.append(Vector2i(ex, ey))
+	return wps
+
+
+# Genera waypoints de un río tributario random — start y end en cualquier lado.
+func _generate_random_river_waypoints(w: int, h: int, rng: RandomNumberGenerator) -> Array:
+	# Source/sink en lados opuestos preferentemente, para que cruce el mapa.
+	var sides: Array = [0, 1, 2, 3]  # 0=N, 1=E, 2=S, 3=W
+	sides.shuffle()
+	var src_side: int = sides[0]
+	var snk_side: int = sides[1] if sides[1] != src_side else sides[2]
+	var src: Vector2i = _random_point_on_side(w, h, src_side, rng)
+	var snk: Vector2i = _random_point_on_side(w, h, snk_side, rng)
+	var num_wps: int = 4 + rng.randi() % 4
+	var wps: Array = [src]
+	for j in range(1, num_wps):
+		var t: float = float(j) / float(num_wps)
+		var lin_x: float = lerp(float(src.x), float(snk.x), t)
+		var lin_y: float = lerp(float(src.y), float(snk.y), t)
+		var off_x: float = rng.randf_range(-w * 0.10, w * 0.10)
+		var off_y: float = rng.randf_range(-h * 0.10, h * 0.10)
+		wps.append(Vector2i(int(lin_x + off_x), int(lin_y + off_y)))
+	wps.append(snk)
+	return wps
+
+
+func _random_point_on_side(w: int, h: int, side: int, rng: RandomNumberGenerator) -> Vector2i:
+	# 0=N (top), 1=E (right), 2=S (bottom), 3=W (left). Random along that side.
+	match side:
+		0: return Vector2i(rng.randi_range(int(w * 0.08), int(w * 0.92)), rng.randi_range(0, int(h * 0.18)))
+		1: return Vector2i(rng.randi_range(int(w * 0.82), w - 1), rng.randi_range(int(h * 0.08), int(h * 0.92)))
+		2: return Vector2i(rng.randi_range(int(w * 0.08), int(w * 0.92)), rng.randi_range(int(h * 0.82), h - 1))
+		3: return Vector2i(rng.randi_range(0, int(w * 0.18)), rng.randi_range(int(h * 0.08), int(h * 0.92)))
+	return Vector2i(w / 2, h / 2)
+
+
+# Genera N lagos en posiciones random pasables, con borde perlin irregular.
+func _carve_lakes(world: World, rng: RandomNumberGenerator, count: int) -> void:
+	var placed: int = 0
+	var attempts: int = 0
+	while placed < count and attempts < count * 60:
+		attempts += 1
+		var lx: int = rng.randi_range(int(world.width * 0.10), int(world.width * 0.90))
+		var ly: int = rng.randi_range(int(world.height * 0.10), int(world.height * 0.90))
+		# Solo en biomas low-elev pasables (LLANOS, MESA, DESIERTO)
+		var b: int = world.get_biome(lx, ly)
+		if b != Biome.LLANOS and b != Biome.MESA and b != Biome.DESIERTO:
+			continue
+		var lake_r: int = rng.randi_range(6, 14)
+		_paint_lake(world, lx, ly, lake_r, rng)
+		placed += 1
+
+
+func _paint_lake(world: World, cx: int, cy: int, lake_r: int, rng: RandomNumberGenerator) -> void:
+	var lake_noise := FastNoiseLite.new()
+	lake_noise.seed = world.seed_value + cx * 13 + cy * 17 + rng.randi()
+	lake_noise.frequency = 0.18
+	for dy in range(-lake_r - 4, lake_r + 5):
+		for dx in range(-lake_r - 4, lake_r + 5):
+			var x: int = cx + dx
+			var y: int = cy + dy
+			if not world.in_bounds(x, y):
+				continue
+			var noise_off: float = lake_noise.get_noise_2d(x, y) * 3.5
+			var dist: float = sqrt(dx * dx + dy * dy) + noise_off
+			if dist <= lake_r:
+				world.set_biome(x, y, Biome.RIO)
+
+
+# Bridges V2: verifica que ambos lados perpendiculares tengan LAND pasable
+# (no en medio de un lago, no donde no haya tierra al otro lado).
+func _place_random_bridges_v2(world: World, rng: RandomNumberGenerator, target_count: int, min_dist: int) -> void:
+	var river_tiles: Array[Vector2i] = []
+	for y in range(world.height):
+		for x in range(world.width):
+			if world.get_biome(x, y) == Biome.RIO:
+				river_tiles.append(Vector2i(x, y))
+	if river_tiles.is_empty():
+		return
+	# Shuffle
+	for i in range(river_tiles.size() - 1, 0, -1):
+		var j: int = rng.randi() % (i + 1)
+		var tmp: Vector2i = river_tiles[i]
+		river_tiles[i] = river_tiles[j]
+		river_tiles[j] = tmp
+	var placed: Array[Vector2i] = []
+	for t in river_tiles:
+		if placed.size() >= target_count:
+			break
+		# Min distance vs otros bridges
+		var too_close: bool = false
+		for p in placed:
+			var ddx: int = t.x - p.x
+			var ddy: int = t.y - p.y
+			if ddx * ddx + ddy * ddy < min_dist * min_dist:
+				too_close = true; break
+		if too_close:
+			continue
+		if world.get_biome(t.x, t.y) != Biome.RIO:
+			continue
+		# Detectar orientación local del río
+		var horiz: int = 0
+		var vert: int = 0
+		for dx in [-1, 1]:
+			if world.in_bounds(t.x + dx, t.y) and world.get_biome(t.x + dx, t.y) == Biome.RIO:
+				horiz += 1
+		for dy in [-1, 1]:
+			if world.in_bounds(t.x, t.y + dy) and world.get_biome(t.x, t.y + dy) == Biome.RIO:
+				vert += 1
+		if horiz + vert == 0:
+			continue
+		# VERIFICA: ambos lados perpendiculares tienen LAND pasable a max 7 tiles
+		# (sino es un puente en medio de un lago)
+		var perp_horizontal: bool = horiz >= vert
+		var a_ok: bool = false
+		var b_ok: bool = false
+		var check_max: int = 7
+		if perp_horizontal:
+			# Río corre E-W → check N/S
+			for d in range(1, check_max + 1):
+				if not world.in_bounds(t.x, t.y - d): break
+				if world.get_biome(t.x, t.y - d) != Biome.RIO:
+					a_ok = _is_passable_biome(world.get_biome(t.x, t.y - d))
+					break
+			for d in range(1, check_max + 1):
+				if not world.in_bounds(t.x, t.y + d): break
+				if world.get_biome(t.x, t.y + d) != Biome.RIO:
+					b_ok = _is_passable_biome(world.get_biome(t.x, t.y + d))
+					break
+		else:
+			# Río N-S → check E/W
+			for d in range(1, check_max + 1):
+				if not world.in_bounds(t.x - d, t.y): break
+				if world.get_biome(t.x - d, t.y) != Biome.RIO:
+					a_ok = _is_passable_biome(world.get_biome(t.x - d, t.y))
+					break
+			for d in range(1, check_max + 1):
+				if not world.in_bounds(t.x + d, t.y): break
+				if world.get_biome(t.x + d, t.y) != Biome.RIO:
+					b_ok = _is_passable_biome(world.get_biome(t.x + d, t.y))
+					break
+		if not (a_ok and b_ok):
+			continue  # no es cruce real (lago o no hay tierra)
+		# Walk outward para cubrir todo el ancho del río (cap 8 tiles)
+		var bridge_cells: Array[Vector2i] = [t]
+		var max_span: int = 8
+		if perp_horizontal:
+			var y_up: int = t.y - 1
+			var count_up: int = 0
+			while count_up < max_span and world.in_bounds(t.x, y_up) and world.get_biome(t.x, y_up) == Biome.RIO:
+				bridge_cells.append(Vector2i(t.x, y_up))
+				y_up -= 1; count_up += 1
+			var y_dn: int = t.y + 1
+			var count_dn: int = 0
+			while count_dn < max_span and world.in_bounds(t.x, y_dn) and world.get_biome(t.x, y_dn) == Biome.RIO:
+				bridge_cells.append(Vector2i(t.x, y_dn))
+				y_dn += 1; count_dn += 1
+		else:
+			var x_l: int = t.x - 1
+			var count_l: int = 0
+			while count_l < max_span and world.in_bounds(x_l, t.y) and world.get_biome(x_l, t.y) == Biome.RIO:
+				bridge_cells.append(Vector2i(x_l, t.y))
+				x_l -= 1; count_l += 1
+			var x_r: int = t.x + 1
+			var count_r: int = 0
+			while count_r < max_span and world.in_bounds(x_r, t.y) and world.get_biome(x_r, t.y) == Biome.RIO:
+				bridge_cells.append(Vector2i(x_r, t.y))
+				x_r += 1; count_r += 1
+		# Skip si el span es demasiado corto (1 tile = ridículo)
+		if bridge_cells.size() < 2:
+			continue
+		# Si el span > max_span * 2 sin terminar → probablemente lago, skip
+		if bridge_cells.size() >= max_span * 2:
+			continue
+		for bc in bridge_cells:
+			world.set_biome(bc.x, bc.y, Biome.BARRANCA)
+			world.bridges.append(bc)
+		placed.append(t)
+
+
+func _is_passable_biome(b: int) -> bool:
+	# True si el bioma es "land" (terreno que el jugador puede caminar)
+	return b == Biome.LLANOS or b == Biome.DESIERTO or b == Biome.SIERRA \
+		or b == Biome.MINERO or b == Biome.MESA
 
 
 func _carve_river_natural(world: World, waypoints: Array, base_width: int, rng: RandomNumberGenerator) -> void:
