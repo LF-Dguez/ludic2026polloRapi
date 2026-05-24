@@ -619,20 +619,25 @@ func _process(_delta: float) -> void:
 
 
 func _update_prompt() -> void:
-	var atlas: Vector2i = player.get_current_atlas()
 	if mode == Mode.OVERWORLD:
-		match atlas:
-			Vector2i(5, 3):
+		# Busca el POI más cercano dentro de radio 3 — no requiere estar
+		# exactamente sobre la tile de entrada (el stamp tiene muros que la rodean).
+		var nearest = _nearest_poi_within(player.get_current_tile(), 3)
+		if nearest == null:
+			prompt.text = ""
+			return
+		match nearest.type:
+			OverworldScript.POIType.ENTRADA_PAQUIME:
 				prompt.text = "[SPACE] Entrar a las ruinas de Paquimé"
-			Vector2i(6, 3):
+			OverworldScript.POIType.ENTRADA_TARAHUMARA:
 				prompt.text = "[SPACE] Entrar a la cueva Tarahumara"
-			Vector2i(7, 3):
+			OverworldScript.POIType.ENTRADA_NAICA:
 				prompt.text = "[SPACE] Entrar a la mina de Naica"
-			Vector2i(2, 3):
+			OverworldScript.POIType.MATA_ORTIZ:
 				prompt.text = "Mata Ortiz — pueblo de cerámica"
-			Vector2i(3, 3):
+			OverworldScript.POIType.MISION:
 				prompt.text = "Misión jesuita"
-			Vector2i(4, 3):
+			OverworldScript.POIType.CEMENTERIO:
 				prompt.text = "Cementerio"
 			_:
 				prompt.text = ""
@@ -689,24 +694,20 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _handle_interact() -> void:
 	if mode == Mode.OVERWORLD:
-		var atlas: Vector2i = player.get_current_atlas()
-		var tile: Vector2i = player.get_current_tile()
-		match atlas:
-			Vector2i(5, 3):  # Paquimé
-				for poi in world.pois:
-					if poi.type == OverworldScript.POIType.ENTRADA_PAQUIME and poi.pos == tile:
-						_enter_paquime_dungeon(poi)
-						return
-			Vector2i(6, 3):  # Tarahumara
-				for poi in world.pois:
-					if poi.type == OverworldScript.POIType.ENTRADA_TARAHUMARA and poi.pos == tile:
-						_enter_cave_dungeon(poi)
-						return
-			Vector2i(7, 3):  # Naica
-				for poi in world.pois:
-					if poi.type == OverworldScript.POIType.ENTRADA_NAICA and poi.pos == tile:
-						_enter_mine_dungeon(poi)
-						return
+		# Busca POI más cercano dentro de radio 3 (no exige tile exacta)
+		var poi = _nearest_poi_within(player.get_current_tile(), 3)
+		if poi == null:
+			return
+		match poi.type:
+			OverworldScript.POIType.ENTRADA_PAQUIME:
+				_enter_paquime_dungeon(poi)
+				return
+			OverworldScript.POIType.ENTRADA_TARAHUMARA:
+				_enter_cave_dungeon(poi)
+				return
+			OverworldScript.POIType.ENTRADA_NAICA:
+				_enter_mine_dungeon(poi)
+				return
 	elif mode == Mode.DUNGEON_PAQUIME:
 		var atlas2: Vector2i = player.get_current_atlas()
 		if atlas2 == BSPScript.T_EXIT:
@@ -785,6 +786,22 @@ func _apply_minimap_size() -> void:
 		minimap_hint.text = "[M] agrandar minimapa"
 		minimap_hint.position = Vector2(vp.x - MINI_SMALL.x - 10, 100 + MINI_SMALL.y + 4)
 	minimap.queue_redraw()
+
+
+func _nearest_poi_within(tile: Vector2i, radius: int):
+	# Retorna el POI más cercano al tile (en distancia chebyshev) o null.
+	if world == null:
+		return null
+	var best = null
+	var best_d: int = radius + 1
+	for poi in world.pois:
+		var dx: int = poi.pos.x - tile.x
+		var dy: int = poi.pos.y - tile.y
+		var d: int = maxi(absi(dx), absi(dy))
+		if d <= radius and d < best_d:
+			best_d = d
+			best = poi
+	return best
 
 
 func _save_screenshot(shot_name: String) -> void:

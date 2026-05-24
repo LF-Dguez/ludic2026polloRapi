@@ -353,7 +353,8 @@ func generate(w: int, h: int, seed_value: int) -> World:
 
 			world.set_biome(x, y, biome)
 
-	# === Pase 2: Ríos con perlin perturbation (curvas naturales) + riberas + puentes ===
+	# === Pase 2: Ríos MÁS ANCHOS con curvas perlin naturales + puentes ===
+	# Conchos principal — ancho base 3 (era 2), tributarios 2 (era 1).
 	_carve_river_natural(world, [
 		Vector2i(int(w * 0.12), int(h * 0.85)),
 		Vector2i(int(w * 0.22), int(h * 0.72)),
@@ -364,24 +365,24 @@ func generate(w: int, h: int, seed_value: int) -> World:
 		Vector2i(int(w * 0.72), int(h * 0.38)),
 		Vector2i(int(w * 0.82), int(h * 0.30)),
 		Vector2i(int(w * 0.95), int(h * 0.18)),
-	], 2, rng)  # Conchos principal (ancho varía 1-3)
+	], 3, rng)  # Conchos: ancho 3-4 según noise
 	_carve_river_natural(world, [
 		Vector2i(int(w * 0.58), int(h * 0.92)),
 		Vector2i(int(w * 0.58), int(h * 0.80)),
 		Vector2i(int(w * 0.60), int(h * 0.68)),
 		Vector2i(int(w * 0.60), int(h * 0.55)),
-	], 1, rng)
+	], 2, rng)
 	_carve_river_natural(world, [
 		Vector2i(int(w * 0.18), int(h * 0.08)),
 		Vector2i(int(w * 0.25), int(h * 0.12)),
 		Vector2i(int(w * 0.32), int(h * 0.18)),
 		Vector2i(int(w * 0.32), int(h * 0.25)),
-	], 1, rng)
+	], 2, rng)
 	_carve_river_natural(world, [
 		Vector2i(int(w * 0.45), int(h * 0.10)),
 		Vector2i(int(w * 0.52), int(h * 0.30)),
 		Vector2i(int(w * 0.55), int(h * 0.48)),
-	], 1, rng)
+	], 2, rng)
 
 	# === Pase 2.5: Puentes PROCEDURALES — recolecta tiles de río, elige K random con min-dist ===
 	_place_random_bridges(world, rng, 7, 22)
@@ -582,9 +583,9 @@ func _carve_river_natural(world: World, waypoints: Array, base_width: int, rng: 
 
 
 func _draw_river_perlin(world: World, a: Vector2i, b: Vector2i, base_width: int, noise: FastNoiseLite) -> void:
-	# Interpola de a→b en pasos pequeños, perturbando lateralmente con perlin.
+	# Interpola a→b con MAS pasos (densidad 2.5x) y MAS curva natural.
 	var distance: float = Vector2(a).distance_to(Vector2(b))
-	var steps: int = int(distance * 1.3)
+	var steps: int = int(distance * 2.5)  # antes 1.3 — más denso evita gaps en ríos anchos
 	if steps < 2:
 		steps = 2
 	var dir: Vector2 = (Vector2(b) - Vector2(a)).normalized()
@@ -593,14 +594,20 @@ func _draw_river_perlin(world: World, a: Vector2i, b: Vector2i, base_width: int,
 		var t: float = float(s) / float(steps)
 		var base_x: float = lerp(float(a.x), float(b.x), t)
 		var base_y: float = lerp(float(a.y), float(b.y), t)
-		# Perturbación perpendicular (sin falloff en los extremos para conectar bien)
+		# Curva más pronunciada — amplitude 10 (era 6) para ríos que serpentean
 		var falloff: float = sin(t * PI)
-		var lateral: float = noise.get_noise_2d(base_x * 0.5, base_y * 0.5) * 6.0 * falloff
+		var lateral: float = noise.get_noise_2d(base_x * 0.4, base_y * 0.4) * 10.0 * falloff
+		# Secondary curve más fina
+		lateral += noise.get_noise_2d(base_x * 1.2 + 50.0, base_y * 1.2 + 50.0) * 3.0 * falloff
 		var cx: int = int(base_x + perp.x * lateral)
 		var cy: int = int(base_y + perp.y * lateral)
-		# Ancho variable según otro noise
-		var w_variation: float = noise.get_noise_2d(base_x * 0.3 + 99.0, base_y * 0.3 + 99.0) * 0.5 + 0.5
-		var effective_w: int = base_width + (1 if w_variation > 0.65 else 0)
+		# Ancho variable: base ± 1 según noise
+		var w_variation: float = noise.get_noise_2d(base_x * 0.3 + 99.0, base_y * 0.3 + 99.0)
+		var effective_w: int = base_width
+		if w_variation > 0.35:
+			effective_w += 1  # poza/ensanche
+		elif w_variation < -0.55:
+			effective_w = maxi(base_width - 1, 1)  # angostamiento
 		_paint_river_at(world, cx, cy, effective_w)
 
 

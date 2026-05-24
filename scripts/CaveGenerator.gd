@@ -112,10 +112,10 @@ func generate(w: int, h: int, seed_value: int) -> Cave:
 
 	cave.spawn = Vector2i(entry_x, entry_y)
 	cave.exit_pos = Vector2i(sec_cx, sec_cy)
-	# Force 3x3 clear alrededor de spawn y exit para evitar 1-tile islands
-	# (perlin del _carve_chamber puede dejar walls aislados en el centro).
-	for dy in range(-1, 2):
-		for dx in range(-1, 2):
+	# Force 5x5 clear alrededor de spawn y exit (antes 3x3 — más robust contra
+	# perlin chamber irregularities + min-distance hitbox del player).
+	for dy in range(-2, 3):
+		for dx in range(-2, 3):
 			var sx: int = cave.spawn.x + dx
 			var sy: int = cave.spawn.y + dy
 			if sx > 0 and sx < w - 1 and sy > 0 and sy < h - 1:
