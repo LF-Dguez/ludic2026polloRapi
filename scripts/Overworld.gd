@@ -21,16 +21,17 @@ enum POIType {
 	ENTRADA_PAQUIME, ENTRADA_TARAHUMARA, ENTRADA_NAICA,
 }
 
-# Tile primario {src, atlas}
+# Tile primario {src, atlas} — usando atlas del USUARIO donde posible para estilo consistente.
+# afuera rows 0-2 son grass/tierra/rocas (estilo top-down profesional).
 const BIOME_PRIMARY := {
-	Biome.DESIERTO: {"src": SRC_DESERT, "atlas": Vector2i(0, 0)},  # nuevo atlas dorado
-	Biome.LLANOS:   {"src": SRC_OVERWORLD, "atlas": Vector2i(0, 1)},
-	Biome.SIERRA:   {"src": SRC_OVERWORLD, "atlas": Vector2i(3, 1)},
-	Biome.BARRANCA: {"src": SRC_OVERWORLD, "atlas": Vector2i(0, 2)},
-	Biome.MINERO:   {"src": SRC_OVERWORLD, "atlas": Vector2i(3, 2)},
-	Biome.RIO:      {"src": SRC_OVERWORLD, "atlas": Vector2i(6, 2)},
-	Biome.MESA:     {"src": SRC_OVERWORLD, "atlas": Vector2i(7, 4)},
-	Biome.PICO:     {"src": SRC_OVERWORLD, "atlas": Vector2i(0, 5)},
+	Biome.DESIERTO: {"src": SRC_DESERT, "atlas": Vector2i(0, 0)},   # desert atlas dorado
+	Biome.LLANOS:   {"src": SRC_AFUERA, "atlas": Vector2i(0, 0)},    # afuera grass verde claro
+	Biome.SIERRA:   {"src": SRC_AFUERA, "atlas": Vector2i(1, 0)},    # afuera grass más densa
+	Biome.BARRANCA: {"src": SRC_AFUERA, "atlas": Vector2i(3, 0)},    # afuera tierra/grava
+	Biome.MINERO:   {"src": SRC_AFUERA, "atlas": Vector2i(4, 0)},    # afuera tierra oscura
+	Biome.RIO:      {"src": SRC_OVERWORLD, "atlas": Vector2i(6, 2)}, # mi tile río (no hay user tile)
+	Biome.MESA:     {"src": SRC_AFUERA, "atlas": Vector2i(5, 0)},    # afuera mezclada
+	Biome.PICO:     {"src": SRC_OVERWORLD, "atlas": Vector2i(0, 5)}, # mi tile pico
 }
 
 # Decoraciones por bioma — ahora con vegetación del atlas "afuera" (SRC_AFUERA)
