@@ -85,21 +85,64 @@ COLS = len(col_regions)
 ROWS = len(row_regions)
 print(f"Final grid: {COLS}x{ROWS}")
 
+def is_background_px(r, g, b):
+    """True si el pixel es fondo grisáceo oscuro (no decoración).
+    Mantiene pixeles oscuros pero CON COLOR (verde árbol, marrón tronco, rojo hongo)."""
+    brightness = r + g + b
+    if brightness > 180:
+        return False  # claro, definitivamente no es fondo
+    mx = max(r, g, b)
+    mn = min(r, g, b)
+    saturation = mx - mn
+    # Fondo: oscuro AND grisáceo (saturación baja)
+    return brightness < 180 and saturation < 28
+
+
+def detect_bg_color(tile_img):
+    """Estima el color de fondo muestreando esquinas + borde."""
+    px = tile_img.load()
+    w, h = tile_img.size
+    samples = []
+    # Esquinas y centros de bordes
+    for (x, y) in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1),
+                    (w // 2, 0), (w // 2, h - 1), (0, h // 2), (w - 1, h // 2)]:
+        p = px[x, y]
+        samples.append(p[:3])
+    # Promedio
+    avg_r = sum(s[0] for s in samples) // len(samples)
+    avg_g = sum(s[1] for s in samples) // len(samples)
+    avg_b = sum(s[2] for s in samples) // len(samples)
+    return (avg_r, avg_g, avg_b)
+
+
 out = Image.new("RGBA", (COLS * T_OUT, ROWS * T_OUT), (0, 0, 0, 0))
 for r, (y0, y1) in enumerate(row_regions):
     for c, (x0, x1) in enumerate(col_regions):
-        tile = src.crop((x0, y0, x1, y1))
-        # Treat very dark pixels as transparent (background)
-        tile_rgba = tile.convert("RGBA")
-        pxt = tile_rgba.load()
-        tw, th = tile_rgba.size
+        tile = src.crop((x0, y0, x1, y1)).convert("RGBA")
+        pxt = tile.load()
+        tw, th = tile.size
+        # Estima color de fondo de esta tile (puede variar entre tiles)
+        bg = detect_bg_color(tile)
+        # Solo aplicar bg-removal si el detected bg es oscuro+grisáceo
+        bg_is_background = is_background_px(*bg)
         for ty in range(th):
             for tx in range(tw):
-                rr, gg, bb, _aa = pxt[tx, ty]
-                if rr + gg + bb < 30:  # near-black → transparent (esto separa decoración del fondo)
+                rr, gg, bb, aa = pxt[tx, ty]
+                if aa == 0:
+                    continue
+                # Match al bg detectado (tolerancia color)
+                if bg_is_background:
+                    dr = abs(rr - bg[0])
+                    dg = abs(gg - bg[1])
+                    db = abs(bb - bg[2])
+                    if dr + dg + db < 45:
+                        pxt[tx, ty] = (0, 0, 0, 0)
+                        continue
+                # Fallback chromático: oscuro Y grisáceo → fondo
+                if is_background_px(rr, gg, bb):
                     pxt[tx, ty] = (0, 0, 0, 0)
-        tile_rgba = tile_rgba.resize((T_OUT, T_OUT), Image.NEAREST)
-        out.paste(tile_rgba, (c * T_OUT, r * T_OUT))
+        tile = tile.resize((T_OUT, T_OUT), Image.NEAREST)
+        out.paste(tile, (c * T_OUT, r * T_OUT))
 
 out.save(OUT)
 out.resize((COLS * T_OUT * 6, ROWS * T_OUT * 6), Image.NEAREST).save(
