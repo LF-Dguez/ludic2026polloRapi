@@ -1005,6 +1005,8 @@ func _update_prompt() -> void:
 			_:
 				prompt.text = ""
 	elif mode == Mode.DUNGEON_PAQUIME:
+		if _nearby_chest_prompt():
+			return
 		var p_atlas: Vector2i = player.get_current_atlas()
 		if p_atlas == BSPScript.T_EXIT:
 			prompt.text = "[SPACE] Salir al overworld"
@@ -1018,6 +1020,9 @@ func _update_prompt() -> void:
 		if mode == Mode.MINE_NAICA and mine == null:
 			prompt.text = ""
 			return
+		# Prioriza prompt de cofre si player está cerca
+		if _nearby_chest_prompt():
+			return
 		var t: Vector2i = player.get_current_tile()
 		var ex: Vector2i = cave.exit_pos if mode == Mode.CAVE_TARAHUMARA else mine.exit_pos
 		var dx: int = t.x - ex.x
@@ -1026,6 +1031,14 @@ func _update_prompt() -> void:
 			prompt.text = "[SPACE] Salir al overworld"
 		else:
 			prompt.text = ""
+
+
+func _nearby_chest_prompt() -> bool:
+	for chest in get_tree().get_nodes_in_group("boss_chest"):
+		if is_instance_valid(chest) and chest.has_method("is_player_in_range") and chest.is_player_in_range():
+			prompt.text = "[SPACE] Abrir cofre del boss"
+			return true
+	return false
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1137,10 +1150,27 @@ func _on_boss_hp_changed(cur: int, max_hp: int, boss_name: String) -> void:
 		_boss_bar.update_hp(cur, max_hp, boss_name)
 
 
+func _spawn_boss_chest(boss_id: String, pos: Vector2) -> void:
+	var chest_script = load("res://scripts/BossChest.gd")
+	var chest = Area2D.new()
+	chest.set_script(chest_script)
+	chest.setup(boss_id)
+	chest.position = pos
+	_enemies_container.add_child(chest)
+	chest.opened.connect(_on_chest_opened)
+
+
+func _on_chest_opened(boss_id: String, rewards: Array) -> void:
+	# Pequeño popup en prompt
+	prompt.text = "[Cofre abierto: %d items]" % rewards.size()
+
+
 func _on_boss_died(boss_id: String, pos: Vector2, drops: Array) -> void:
 	if _boss_bar != null:
 		_boss_bar.hide_boss()
 	_active_boss = null
+	# Spawn cofre especial donde murió el boss
+	_spawn_boss_chest(boss_id, pos)
 	# Marca dungeon como cleared inmediatamente
 	if active_dungeon_poi != null:
 		_mark_dungeon_cleared(active_dungeon_poi.pos)
