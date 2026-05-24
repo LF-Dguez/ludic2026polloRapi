@@ -12,7 +12,7 @@ signal boss_died(boss_id: String, pos: Vector2, drops: Array)
 # ─── Boss configs por mazmorra ──────────────────────────────────────────
 const BOSSES := {
 	"senor_paquime": {
-		"name": "Señor de Casas Grandes",
+		"name": "Fantasma del tesoro",
 		"max_hp": 80,
 		"speed_chase": 50.0,
 		"contact_damage": 2,
@@ -32,7 +32,7 @@ const BOSSES := {
 		"xp_reward": 80,
 	},
 	"bestia_cobre": {
-		"name": "Bestia del Cobre",
+		"name": "Espiritu del minero",
 		"max_hp": 120,
 		"speed_chase": 110.0,
 		"contact_damage": 3,
@@ -53,7 +53,7 @@ const BOSSES := {
 		"xp_reward": 100,
 	},
 	"espectro_cristal": {
-		"name": "Espectro del Cristal",
+		"name": "Espectro revolucionario",
 		"max_hp": 70,
 		"speed_chase": 80.0,
 		"contact_damage": 2,

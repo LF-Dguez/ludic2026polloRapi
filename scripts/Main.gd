@@ -1,10 +1,11 @@
+
 # Main — orquesta overworld + 3 tipos de mazmorra:
 #   - DUNGEON_PAQUIME: BSP rectangular (puertas T)
 #   - CAVE_TARAHUMARA: cellular automata (rocas orgánicas, atlas cueva del usuario)
 #   - MINE_NAICA: drunkard's walk (túneles + rieles, atlas minas del usuario)
-
+ 
 extends Node2D
-
+ 
 const OverworldScript := preload("res://scripts/Overworld.gd")
 const BSPScript := preload("res://scripts/BSPGenerator.gd")
 const CaveScript := preload("res://scripts/CaveGenerator.gd")
@@ -13,9 +14,9 @@ const PlayerScript := preload("res://scripts/Player.gd")
 const EnemySpawnerScript := preload("res://scripts/EnemySpawner.gd")
 const SaveManagerScript := preload("res://scripts/SaveManager.gd")
 const BossScript := preload("res://scripts/Boss.gd")
-
+ 
 var music_player: AudioStreamPlayer = null
-
+ 
 const TILE_SOURCE := 16
 const TILE_DISPLAY := 32
 const MAP_W := 1024
@@ -42,7 +43,7 @@ const ATLAS_CAVE_COLS := 8
 const ATLAS_CAVE_ROWS := 8
 const ATLAS_MINES_COLS := 8
 const ATLAS_MINES_ROWS := 9
-
+ 
 # Tiles impasables (overworld) — source << 16 | x << 8 | y para unificar
 const IMPASSABLE_OVERWORLD := [
 	# source 0 (overworld)
@@ -56,15 +57,15 @@ const IMPASSABLE_OVERWORLD := [
 	(0 << 16) | (5 << 8) | 4,   # T_WOOD_FRAME — marco de mina Naica
 	(0 << 16) | (6 << 8) | 1,   # roca sierra — perímetro cementerio
 ]
-
+ 
 const IMPASSABLE_PAQUIME := [
 	(0 << 16) | (2 << 8) | 0,   # muro
 	(0 << 16) | (3 << 8) | 1,   # agua
 	(0 << 16) | (0 << 8) | 0,   # void
 ]
-
+ 
 enum Mode { OVERWORLD, DUNGEON_PAQUIME, CAVE_TARAHUMARA, MINE_NAICA }
-
+ 
 @onready var canvas_modulate: CanvasModulate = $CanvasModulate
 @onready var dark_bg: ColorRect = $DarkBG
 @onready var overworld_layer: TileMapLayer = $OverworldLayer
@@ -80,16 +81,16 @@ enum Mode { OVERWORLD, DUNGEON_PAQUIME, CAVE_TARAHUMARA, MINE_NAICA }
 @onready var prompt: Label = $HUD/Prompt
 @onready var minimap = $HUD/Minimap
 @onready var minimap_hint: Label = $HUD/MinimapHint
-
+ 
 # Límites del zoom (para que no se vea el grid haciendo zoom-out hasta el mapa entero)
 const ZOOM_MIN := 0.6
 const ZOOM_MAX := 3.0
-
+ 
 # Estado del minimapa
 const MINI_SMALL := Vector2(240, 180)
 const MINI_LARGE := Vector2(900, 675)
 var minimap_large: bool = false
-
+ 
 var current_seed: int = 0
 var mode: int = Mode.OVERWORLD
 # Roguelike progression: POIs de mazmorra completados (Array[Vector2i])
@@ -106,15 +107,15 @@ var world  # Overworld.World
 var dungeon  # BSPGenerator.Dungeon
 var cave  # CaveGenerator.Cave
 var mine  # MineGenerator.Mine
-
+ 
 # Guard contra regeneraciones concurrentes (spam de R)
 var regenerating: bool = false
-
+ 
 # Textura del atlas de trees grandes (Sprite2D)
 var _trees_big_tex: Texture2D = null
 const TREE_SOURCE_SIZE := 32  # cada tile en trees_big.png es 32x32
 const TREE_DISPLAY_SCALE := 4.0  # source 32 × scale 4 = 128px display = 2× player
-
+ 
 # Enemy sprite frames (cached)
 var _bandido_frames: SpriteFrames = null
 var _fantasma_frames: SpriteFrames = null
@@ -122,10 +123,10 @@ var _fantasma_frames: SpriteFrames = null
 var _enemies_container: Node2D = null
 # Tracking de cementerios ya poblados (poi.pos → true)
 var _cementerios_spawned: Dictionary = {}
-
+ 
 var saved_overworld_tile: Vector2i = Vector2i.ZERO
 var active_dungeon_poi: Variant = null
-
+ 
 # Camera shake
 var _shake_t: float = 0.0
 var _shake_amp: float = 0.0
@@ -143,40 +144,40 @@ var _fog: CanvasLayer = null
 # Title screen state (instance vars porque lambdas no capturan locales por ref)
 var _title_choice: String = "new"
 var _title_done: bool = false
-
+ 
 # Music of the world
 var _music_dungeon: AudioStream = preload("res://audio/music/dungeonmusic.mp3")
 var _music_overworld: AudioStream = preload("res://audio/music/exteriormusic.mp3")
-
+ 
 # ─── Random overworld enemy spawning ─────────────────────────────────
 const OVERWORLD_ENEMY_CAP := 14
 const OVERWORLD_SPAWN_MIN_DIST := 220.0  # no spawn pegado al player
 const OVERWORLD_SPAWN_MAX_DIST := 480.0  # no spawn fuera de pantalla lejos
 const OVERWORLD_DESPAWN_DIST := 950.0
 var _overworld_spawn_cd: float = 3.0
-
-
+ 
+ 
 func _on_title_start() -> void:
 	_title_choice = "new"
 	_title_done = true
-
-
+ 
+ 
 func _on_title_load() -> void:
 	_title_choice = "load"
 	_title_done = true
-
-
+ 
+ 
 func _on_title_quit() -> void:
 	get_tree().quit()
-
-
+ 
+ 
 func _weapon_label_update(wid: String) -> void:
 	if _weapon_label_ref == null:
 		return
 	var def: Dictionary = Player.WEAPONS.get(wid, {})
 	_weapon_label_ref.text = "[Tab] Arma: %s" % def.get("name", wid)
-
-
+ 
+ 
 func _ready() -> void:
 	music_player = AudioStreamPlayer.new()
 	music_player.name = "MusicPlayer"
@@ -398,8 +399,8 @@ func _ready() -> void:
 			])
 	await _regenerate_overworld()
 	# Auto-tour solo se activa con F12 (QA screenshots), no automático al iniciar
-
-
+ 
+ 
 func _auto_tour() -> void:
 	var types_to_visit := [
 		OverworldScript.POIType.ENTRADA_PAQUIME,
@@ -424,13 +425,13 @@ func _auto_tour() -> void:
 		await get_tree().create_timer(1.2).timeout
 		_exit_to_overworld()
 		await get_tree().create_timer(0.4).timeout
-
-
+ 
+ 
 func _build_overworld_tileset() -> TileSet:
 	# Multi-source TileSet: overworld atlas (src 0) + desert atlas (src 1)
 	var ts := TileSet.new()
 	ts.tile_size = Vector2i(TILE_SOURCE, TILE_SOURCE)
-
+ 
 	# Source 0: overworld_tiles.png
 	var src0 := TileSetAtlasSource.new()
 	src0.texture = _load_texture("res://art/tiles/overworld_tiles.png")
@@ -439,7 +440,7 @@ func _build_overworld_tileset() -> TileSet:
 		for y in range(ATLAS_OVERWORLD_ROWS):
 			src0.create_tile(Vector2i(x, y))
 	ts.add_source(src0, 0)
-
+ 
 	# Source 1: desert_tiles_clean.png
 	var src1 := TileSetAtlasSource.new()
 	src1.texture = _load_texture("res://art/tiles/desert_tiles_clean.png")
@@ -448,7 +449,7 @@ func _build_overworld_tileset() -> TileSet:
 		for y in range(ATLAS_DESERT_ROWS):
 			src1.create_tile(Vector2i(x, y))
 	ts.add_source(src1, 1)
-
+ 
 	# Source 2: afuera_clean.png (vegetación: arbustos, flores, rocas, hongos, tocones)
 	var src2 := TileSetAtlasSource.new()
 	src2.texture = _load_texture("res://art/tiles/afuera_clean.png")
@@ -457,7 +458,7 @@ func _build_overworld_tileset() -> TileSet:
 		for y in range(ATLAS_AFUERA_ROWS):
 			src2.create_tile(Vector2i(x, y))
 	ts.add_source(src2, 2)
-
+ 
 	# Source 3: trees_topdown.png — árboles top-down propios con canopy real
 	var src3 := TileSetAtlasSource.new()
 	src3.texture = _load_texture("res://art/tiles/trees_topdown.png")
@@ -466,7 +467,7 @@ func _build_overworld_tileset() -> TileSet:
 		for y in range(ATLAS_TREES_ROWS):
 			src3.create_tile(Vector2i(x, y))
 	ts.add_source(src3, 3)
-
+ 
 	# Source 4: biome_bases.png — bases SUAVES uniformes por bioma (no tile-able artifacts)
 	var src4 := TileSetAtlasSource.new()
 	src4.texture = _load_texture("res://art/tiles/biome_bases.png")
@@ -475,10 +476,10 @@ func _build_overworld_tileset() -> TileSet:
 		for y in range(ATLAS_BASES_ROWS):
 			src4.create_tile(Vector2i(x, y))
 	ts.add_source(src4, 4)
-
+ 
 	return ts
-
-
+ 
+ 
 func _build_dual_tileset(wall_path: String, wall_cols: int, wall_rows: int,
 		floor_path: String, floor_cols: int, floor_rows: int, tile_px: int) -> TileSet:
 	var ts := TileSet.new()
@@ -500,18 +501,22 @@ func _build_dual_tileset(wall_path: String, wall_cols: int, wall_rows: int,
 			src1.create_tile(Vector2i(x, y))
 	ts.add_source(src1, 1)
 	return ts
-
-
+ 
+ 
 func _load_texture(res_path: String) -> Texture2D:
-	var img := Image.load_from_file(ProjectSettings.globalize_path(res_path))
-	if img == null:
+	var tex = load(res_path)
+	if tex == null:
 		push_error("No pude cargar %s" % res_path)
 		return null
-	return ImageTexture.create_from_image(img)
-
-
+	if tex is Texture2D:
+		return tex
+	if tex is Image:
+		return ImageTexture.create_from_image(tex)
+	return null
+ 
+ 
 # ============ OVERWORLD ============
-
+ 
 func _regenerate_overworld() -> void:
 	if regenerating:
 		return  # guard contra spam de R durante async
@@ -534,10 +539,10 @@ func _regenerate_overworld() -> void:
 		_fog.set_intensity(0)
 	player.passable_decor = {}  # overworld no usa el dict
 	player.set_mode(Mode.OVERWORLD)
-
+ 
 	info.text = "Generando mundo de %dx%d tiles..." % [MAP_W, MAP_H]
 	await get_tree().process_frame
-
+ 
 	# Si veníamos de save, usa el seed guardado (mismo mundo). Sino random.
 	if _loaded_from_save and _pending_load.has("seed"):
 		current_seed = int(_pending_load["seed"])
@@ -578,7 +583,7 @@ func _regenerate_overworld() -> void:
 	t0 = Time.get_ticks_msec()
 	await _paint_overworld(world)
 	var t_paint := Time.get_ticks_msec() - t0
-
+ 
 	# Spawn: si hay save con tile_pos válido, usarlo; sino Mata Ortiz
 	var spawn_tile: Vector2i
 	if _pending_load.has("tile_pos") and (_pending_load["tile_pos"] as Vector2i) != Vector2i.ZERO:
@@ -597,8 +602,8 @@ func _regenerate_overworld() -> void:
 	_play_music(_music_overworld)
 	await _save_screenshot("overworld")
 	regenerating = false
-
-
+ 
+ 
 func _find_safe_spawn(origin: Vector2i) -> Vector2i:
 	# Spiral outward desde origin buscando un tile transitable (no río/barranca/pico).
 	var max_r: int = maxi(MAP_W, MAP_H)
@@ -622,8 +627,8 @@ func _find_safe_spawn(origin: Vector2i) -> Vector2i:
 					continue
 				return Vector2i(x, y)
 	return origin
-
-
+ 
+ 
 func _paint_overworld(w) -> void:
 	overworld_layer.clear()
 	overworld_decor_layer.clear()
@@ -650,23 +655,23 @@ func _paint_overworld(w) -> void:
 			if painted >= 60000:
 				painted = 0
 				await get_tree().process_frame
-
-
+ 
+ 
 func _find_first_poi(type: int) -> Vector2i:
 	for poi in world.pois:
 		if poi.type == type:
 			return poi.pos
 	return Vector2i(-1, -1)
-
+ 
 func _play_music(stream: AudioStream, volume_db: float = -6.0) -> void:
 	if music_player.stream == stream and music_player.playing:
 		return  # ya está sonando, no reiniciar
 	music_player.stream = stream
 	music_player.volume_db = volume_db
 	music_player.play()
-
+ 
 # ============ PAQUIMÉ ============
-
+ 
 func _enter_paquime_dungeon(poi) -> void:
 	mode = Mode.DUNGEON_PAQUIME
 	overworld_layer.visible = false
@@ -689,7 +694,7 @@ func _enter_paquime_dungeon(poi) -> void:
 	player.set_mode(Mode.DUNGEON_PAQUIME)
 	active_dungeon_poi = poi
 	saved_overworld_tile = player.get_current_tile()
-
+ 
 	var dungeon_seed: int = current_seed ^ (poi.pos.x * 73856093) ^ (poi.pos.y * 19349663)
 	var gen := BSPScript.new()
 	var t0 := Time.get_ticks_msec()
@@ -698,7 +703,7 @@ func _enter_paquime_dungeon(poi) -> void:
 	t0 = Time.get_ticks_msec()
 	_paint_dungeon(dungeon)
 	var t_paint := Time.get_ticks_msec() - t0
-
+ 
 	var entrance_tile: Vector2i = _find_first_tile_in_dungeon(BSPScript.T_ENTRANCE)
 	if entrance_tile == Vector2i(-1, -1):
 		entrance_tile = Vector2i(DUN_W / 2, DUN_H / 2)
@@ -712,16 +717,16 @@ func _enter_paquime_dungeon(poi) -> void:
 	_update_hud(t_gen, t_paint)
 	_play_music(_music_dungeon)
 	await _save_screenshot("dungeon_paquime")
-
-
+ 
+ 
 func _find_first_tile_in_dungeon(target: Vector2i) -> Vector2i:
 	for y in range(dungeon.height):
 		for x in range(dungeon.width):
 			if dungeon.get_tile(x, y) == target:
 				return Vector2i(x, y)
 	return Vector2i(-1, -1)
-
-
+ 
+ 
 func _paint_dungeon(dun) -> void:
 	dungeon_layer.clear()
 	# Pase 1: Pinta TODOS los floor cells con paquime_floor (source 1)
@@ -747,10 +752,10 @@ func _paint_dungeon(dun) -> void:
 				continue
 			# Resto: wall, doors, decoraciones — pintar
 			dungeon_layer.set_cell(Vector2i(x, y), 0, tile)
-
-
+ 
+ 
 # ============ TARAHUMARA CAVE ============
-
+ 
 func _enter_cave_dungeon(poi) -> void:
 	mode = Mode.CAVE_TARAHUMARA
 	overworld_layer.visible = false
@@ -773,7 +778,7 @@ func _enter_cave_dungeon(poi) -> void:
 	player.set_mode(Mode.CAVE_TARAHUMARA)
 	active_dungeon_poi = poi
 	saved_overworld_tile = player.get_current_tile()
-
+ 
 	var cave_seed: int = current_seed ^ (poi.pos.x * 12586093) ^ (poi.pos.y * 89469663)
 	var gen := CaveScript.new()
 	var t0 := Time.get_ticks_msec()
@@ -782,7 +787,7 @@ func _enter_cave_dungeon(poi) -> void:
 	t0 = Time.get_ticks_msec()
 	_paint_cave(cave)
 	var t_paint := Time.get_ticks_msec() - t0
-
+ 
 	player.set_tile_position(cave.spawn)
 	_clear_enemies()
 	_spawn_enemies_cave(cave)
@@ -790,8 +795,8 @@ func _enter_cave_dungeon(poi) -> void:
 	_update_hud(t_gen, t_paint)
 	_play_music(_music_dungeon)
 	await _save_screenshot("dungeon_cave")
-
-
+ 
+ 
 func _paint_cave(c) -> void:
 	cave_layer.clear()
 	# Pase 1: FLOOR tiles (source 1) en todas las celdas piso
@@ -816,10 +821,10 @@ func _paint_cave(c) -> void:
 		var atlas: Vector2i = c.floor_scatter[k]
 		cave_layer.set_cell(pos, 0, atlas)
 		player.passable_decor[pos] = true
-
-
+ 
+ 
 # ============ NAICA MINE ============
-
+ 
 func _enter_mine_dungeon(poi) -> void:
 	mode = Mode.MINE_NAICA
 	overworld_layer.visible = false
@@ -842,7 +847,7 @@ func _enter_mine_dungeon(poi) -> void:
 	player.set_mode(Mode.MINE_NAICA)
 	active_dungeon_poi = poi
 	saved_overworld_tile = player.get_current_tile()
-
+ 
 	var mine_seed: int = current_seed ^ (poi.pos.x * 35586093) ^ (poi.pos.y * 24569663)
 	var gen := MineScript.new()
 	var t0 := Time.get_ticks_msec()
@@ -851,7 +856,7 @@ func _enter_mine_dungeon(poi) -> void:
 	t0 = Time.get_ticks_msec()
 	_paint_mine(mine)
 	var t_paint := Time.get_ticks_msec() - t0
-
+ 
 	player.set_tile_position(mine.spawn)
 	_clear_enemies()
 	_spawn_enemies_mine(mine)
@@ -859,8 +864,8 @@ func _enter_mine_dungeon(poi) -> void:
 	_update_hud(t_gen, t_paint)
 	_play_music(_music_dungeon)
 	await _save_screenshot("dungeon_mine")
-
-
+ 
+ 
 func _paint_mine(m) -> void:
 	mines_layer.clear()
 	# Pase 1: FLOOR (source 1) en celdas piso
@@ -889,16 +894,16 @@ func _paint_mine(m) -> void:
 		var atlas: Vector2i = m.decor[k]
 		mines_layer.set_cell(pos, 0, atlas)
 		player.passable_decor[pos] = true
-
-
+ 
+ 
 # ============ EXIT ============
-
+ 
 func _on_dungeon_exited_for_clear() -> void:
 	# Llamado desde _exit_to_overworld para marcar el dungeon visitado como cleared.
 	if active_dungeon_poi != null:
 		_mark_dungeon_cleared(active_dungeon_poi.pos)
-
-
+ 
+ 
 func _exit_to_overworld() -> void:
 	_on_dungeon_exited_for_clear()
 	mode = Mode.OVERWORLD
@@ -929,10 +934,10 @@ func _exit_to_overworld() -> void:
 	player.set_tile_position(target)
 	_update_hud(0, 0)
 	_play_music(_music_overworld)
-
-
+ 
+ 
 # ============ HUD / INPUT ============
-
+ 
 func _update_hud(t_gen: int, t_paint: int) -> void:
 	match mode:
 		Mode.OVERWORLD:
@@ -962,16 +967,16 @@ func _update_hud(t_gen: int, t_paint: int) -> void:
 			info.text = "Norte Profundo — MINA NAICA  |  %dx%d  |  gen %dms paint %dms\n[WASD] mover  [Backspace] salir  Spawn:(%d,%d)  Exit:(%d,%d)  Decor:%d" % [
 				MINE_W, MINE_H, t_gen, t_paint, mine.spawn.x, mine.spawn.y, mine.exit_pos.x, mine.exit_pos.y, mine.decor.size()
 			]
-
-
+ 
+ 
 func _process(delta: float) -> void:
 	_update_prompt()
 	_check_cementerio_spawns()
 	_check_overworld_random_spawns(delta)
 	_update_camera_shake(delta)
 	_check_achievements()
-
-
+ 
+ 
 # ─── Random overworld enemy spawn ────────────────────────────────────
 func _check_overworld_random_spawns(delta: float) -> void:
 	if mode != Mode.OVERWORLD or world == null or player == null:
@@ -1011,8 +1016,8 @@ func _check_overworld_random_spawns(delta: float) -> void:
 		elif _fantasma_frames != null:
 			EnemySpawnerScript.spawn_fantasma(_enemies_container, spawn_world, _fantasma_frames, overworld_layer, 0)
 		return  # spawn exitoso
-
-
+ 
+ 
 func _despawn_far_overworld_enemies() -> void:
 	if player == null:
 		return
@@ -1024,16 +1029,16 @@ func _despawn_far_overworld_enemies() -> void:
 			continue
 		if pp.distance_to(c.global_position) > OVERWORLD_DESPAWN_DIST:
 			c.queue_free()
-
-
+ 
+ 
 # ─── Camera shake ────────────────────────────────────────────────────
 func camera_shake(amplitude: float, duration: float) -> void:
 	_shake_amp = maxf(_shake_amp, amplitude)
 	_shake_t = maxf(_shake_t, duration)
 	if _shake_seed == 0.0:
 		_shake_seed = randf() * 1000.0
-
-
+ 
+ 
 func _update_camera_shake(delta: float) -> void:
 	if camera == null:
 		return
@@ -1047,15 +1052,15 @@ func _update_camera_shake(delta: float) -> void:
 		if _shake_t <= 0.0:
 			camera.offset = Vector2.ZERO
 			_shake_amp = 0.0
-
-
+ 
+ 
 # ─── XP / Level ───────────────────────────────────────────────────────
 func _on_enemy_killed(enemy_type: String, xp_value: int) -> void:
 	stats_kills += 1
 	if _xp_bar != null:
 		_xp_bar.add_xp(xp_value)
-
-
+ 
+ 
 func _on_level_up(new_level: int) -> void:
 	# Cada nivel: +1 max HP + dmg cada 3 niveles + crit chance escalable
 	if player == null:
@@ -1077,8 +1082,8 @@ func _on_level_up(new_level: int) -> void:
 	if _achievements != null:
 		if new_level >= 5: _achievements.unlock("level_5")
 		if new_level >= 10: _achievements.unlock("level_10")
-
-
+ 
+ 
 # ─── Achievements check (cada frame, cheap) ──────────────────────────
 func _check_achievements() -> void:
 	if _achievements == null:
@@ -1092,8 +1097,8 @@ func _check_achievements() -> void:
 	if player != null and player.inventory != null:
 		if player.inventory.count_of("pesos_plata") >= 200:
 			_achievements.unlock("rich")
-
-
+ 
+ 
 func _update_prompt() -> void:
 	if mode == Mode.OVERWORLD:
 		# Busca el POI más cercano dentro de radio 3 — no requiere estar
@@ -1144,16 +1149,16 @@ func _update_prompt() -> void:
 			prompt.text = "[SPACE] Salir al overworld"
 		else:
 			prompt.text = ""
-
-
+ 
+ 
 func _nearby_chest_prompt() -> bool:
 	for chest in get_tree().get_nodes_in_group("boss_chest"):
 		if is_instance_valid(chest) and chest.has_method("is_player_in_range") and chest.is_player_in_range():
 			prompt.text = "[SPACE] Abrir cofre del boss"
 			return true
 	return false
-
-
+ 
+ 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
@@ -1190,8 +1195,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_F12:
 				if mode == Mode.OVERWORLD:
 					_auto_tour()
-
-
+ 
+ 
 func _handle_interact() -> void:
 	if mode == Mode.OVERWORLD:
 		# Busca POI más cercano dentro de radio 3 (no exige tile exacta)
@@ -1224,13 +1229,13 @@ func _handle_interact() -> void:
 		var dy: int = t.y - ex.y
 		if dx * dx + dy * dy <= 2:
 			_exit_to_overworld()
-
-
+ 
+ 
 func _clear_trees() -> void:
 	for child in trees_container.get_children():
 		child.queue_free()
-
-
+ 
+ 
 func _clear_enemies() -> void:
 	if _enemies_container == null:
 		return
@@ -1240,8 +1245,8 @@ func _clear_enemies() -> void:
 	_active_boss = null
 	if _boss_bar != null:
 		_boss_bar.hide_boss()
-
-
+ 
+ 
 # ─── Boss spawn / handlers ───────────────────────────────────────────
 func _spawn_boss(boss_id: String, tile: Vector2i, layer: TileMapLayer, mode_int: int) -> void:
 	var pwx: float = tile.x * TILE_DISPLAY + TILE_DISPLAY / 2.0
@@ -1256,13 +1261,13 @@ func _spawn_boss(boss_id: String, tile: Vector2i, layer: TileMapLayer, mode_int:
 	boss.boss_died.connect(_on_boss_died)
 	if _boss_bar != null:
 		_boss_bar.show_boss(BossScript.BOSSES[boss_id]["name"], boss.hp, boss.max_hp)
-
-
+ 
+ 
 func _on_boss_hp_changed(cur: int, max_hp: int, boss_name: String) -> void:
 	if _boss_bar != null:
 		_boss_bar.update_hp(cur, max_hp, boss_name)
-
-
+ 
+ 
 func _spawn_boss_chest(boss_id: String, pos: Vector2) -> void:
 	var chest_script = load("res://scripts/BossChest.gd")
 	var chest = Area2D.new()
@@ -1271,13 +1276,13 @@ func _spawn_boss_chest(boss_id: String, pos: Vector2) -> void:
 	chest.position = pos
 	_enemies_container.add_child(chest)
 	chest.opened.connect(_on_chest_opened)
-
-
+ 
+ 
 func _on_chest_opened(boss_id: String, rewards: Array) -> void:
 	# Pequeño popup en prompt
 	prompt.text = "[Cofre abierto: %d items]" % rewards.size()
-
-
+ 
+ 
 func _on_boss_died(boss_id: String, pos: Vector2, drops: Array) -> void:
 	if _boss_bar != null:
 		_boss_bar.hide_boss()
@@ -1305,8 +1310,8 @@ func _on_boss_died(boss_id: String, pos: Vector2, drops: Array) -> void:
 			_achievements.unlock("all_bosses")
 	# Screen shake épico
 	camera_shake(10.0, 0.5)
-
-
+ 
+ 
 # Encuentra N tiles de FLOOR random en el dungeon Paquimé y spawnea bandidos
 func _spawn_enemies_paquime(dun) -> void:
 	if _bandido_frames == null:
@@ -1331,8 +1336,8 @@ func _spawn_enemies_paquime(dun) -> void:
 			continue
 		EnemySpawnerScript.spawn_bandido(_enemies_container, Vector2(pwx, pwy), _bandido_frames, dungeon_layer, 1)
 		placed += 1
-
-
+ 
+ 
 # Cave Tarahumara: spawn fantasmas (cave atmosphere)
 func _spawn_enemies_cave(c) -> void:
 	if _fantasma_frames == null:
@@ -1354,8 +1359,8 @@ func _spawn_enemies_cave(c) -> void:
 			continue
 		EnemySpawnerScript.spawn_fantasma(_enemies_container, Vector2(pwx, pwy), _fantasma_frames, cave_layer, 2)
 		placed += 1
-
-
+ 
+ 
 # Mina Naica: spawn bandidos
 func _spawn_enemies_mine(m) -> void:
 	if _bandido_frames == null:
@@ -1377,8 +1382,8 @@ func _spawn_enemies_mine(m) -> void:
 			continue
 		EnemySpawnerScript.spawn_bandido(_enemies_container, Vector2(pwx, pwy), _bandido_frames, mines_layer, 3)
 		placed += 1
-
-
+ 
+ 
 # Cementerios overworld: spawn 2-3 fantasmas al acercarse player (radio 200px)
 func _check_cementerio_spawns() -> void:
 	if mode != Mode.OVERWORLD or _fantasma_frames == null or world == null:
@@ -1399,8 +1404,8 @@ func _check_cementerio_spawns() -> void:
 				var off: Vector2 = Vector2(randf_range(-80, 80), randf_range(-80, 80))
 				EnemySpawnerScript.spawn_fantasma(_enemies_container, cem_world + off, _fantasma_frames, overworld_layer, 0)
 			_cementerios_spawned[poi.pos] = true
-
-
+ 
+ 
 func _spawn_trees(w) -> void:
 	# Sprite2D per tree, scale 4 → 128px display (2× player).
 	# Offset visual: trunk (parte baja del sprite) cae sobre tile_pos; canopy
@@ -1430,18 +1435,18 @@ func _spawn_trees(w) -> void:
 		trees_container.add_child(spr)
 		blocked[tile_pos] = true
 	player.tree_blocked_tiles = blocked
-
-
+ 
+ 
 func _clamp_zoom() -> void:
 	camera.zoom.x = clampf(camera.zoom.x, ZOOM_MIN, ZOOM_MAX)
 	camera.zoom.y = clampf(camera.zoom.y, ZOOM_MIN, ZOOM_MAX)
-
-
+ 
+ 
 func _toggle_minimap() -> void:
 	minimap_large = not minimap_large
 	_apply_minimap_size()
-
-
+ 
+ 
 func _apply_minimap_size() -> void:
 	# Usa viewport real (no hardcode 1280/720) por si la ventana cambia
 	var vp: Vector2 = get_viewport_rect().size
@@ -1456,14 +1461,14 @@ func _apply_minimap_size() -> void:
 		minimap_hint.text = "[M] agrandar minimapa"
 		minimap_hint.position = Vector2(vp.x - MINI_SMALL.x - 10, 100 + MINI_SMALL.y + 4)
 	minimap.queue_redraw()
-
-
+ 
+ 
 func _notification(what: int) -> void:
 	# Auto-save al cerrar ventana
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		_save_game()
-
-
+ 
+ 
 func _save_game() -> void:
 	if world == null or player == null:
 		return
@@ -1505,8 +1510,8 @@ func _save_game() -> void:
 		print("[Save] Guardado OK — seed=%d cleared=%d lvl=%d" % [current_seed, cleared_dungeons.size(), xp_lvl])
 	else:
 		prompt.text = "[Error al guardar]"
-
-
+ 
+ 
 func _load_game() -> void:
 	var loaded = SaveManagerScript.load_from_disk()
 	if loaded == null:
@@ -1520,14 +1525,14 @@ func _load_game() -> void:
 	inventory = loaded.get("inventory", [])
 	prompt.text = "[Save cargado, regenerando...]"
 	_regenerate_overworld()
-
-
+ 
+ 
 func _mark_dungeon_cleared(poi_pos: Vector2i) -> void:
 	if not cleared_dungeons.has(poi_pos):
 		cleared_dungeons.append(poi_pos)
 		stats_runs += 1
-
-
+ 
+ 
 func _on_player_died() -> void:
 	# Pausa input del player (queda en su lugar)
 	# Sale del dungeon (volver al overworld) y muestra GameOver
@@ -1540,8 +1545,8 @@ func _on_player_died() -> void:
 			"runs": stats_runs,
 			"cleared": cleared_dungeons.size(),
 		})
-
-
+ 
+ 
 func _on_respawn_requested() -> void:
 	# Respawn en Mata Ortiz, mantiene progreso (cleared, kills, inventory)
 	var spawn := _find_first_poi(OverworldScript.POIType.MATA_ORTIZ)
@@ -1551,8 +1556,8 @@ func _on_respawn_requested() -> void:
 	if player.has_method("reset_hp"):
 		player.reset_hp()
 	_save_game()  # auto-save al respawn (anti-cheat)
-
-
+ 
+ 
 func _on_new_game_requested() -> void:
 	# Borra save y regenera todo desde 0
 	SaveManagerScript.delete_save()
@@ -1579,8 +1584,8 @@ func _on_new_game_requested() -> void:
 		if player.has_method("reset_hp"):
 			player.reset_hp()
 	_regenerate_overworld()
-
-
+ 
+ 
 func _nearest_poi_within(tile: Vector2i, radius: int):
 	# Retorna el POI más cercano al tile (en distancia chebyshev) o null.
 	if world == null:
@@ -1595,8 +1600,8 @@ func _nearest_poi_within(tile: Vector2i, radius: int):
 			best_d = d
 			best = poi
 	return best
-
-
+ 
+ 
 func _save_screenshot(shot_name: String) -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame

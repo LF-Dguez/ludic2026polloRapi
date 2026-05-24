@@ -12,6 +12,11 @@ func _ready() -> void:
 		body_entered.connect(_on_body_entered)
 	monitoring = true
 	monitorable = true
+	var sfx := AudioStreamPlayer.new()
+	sfx.name = "hitSFX"
+	sfx.stream = load("res://audio/music/hitsound.mp3")
+	sfx.volume_db = 0.0
+	add_child(sfx)
 
 
 func inicializar(dir: Vector2) -> void:
@@ -35,7 +40,7 @@ func _physics_process(delta: float) -> void:
 				e.take_damage(2)
 			else:
 				e.queue_free()
-			queue_free()
+			_hit_and_destroy()
 			return
 	if _alive_time >= MAX_LIFE:
 		queue_free()
@@ -47,4 +52,12 @@ func _on_body_entered(body: Node) -> void:
 			body.take_damage(2)
 		else:
 			body.queue_free()
-		queue_free()
+		_hit_and_destroy()
+
+func _hit_and_destroy() -> void:
+	var sfx := get_node_or_null("HitSFX")
+	if sfx != null:
+		sfx.play()
+		# Espera a que termine antes de destruir el nodo
+		await sfx.finished
+	queue_free()
