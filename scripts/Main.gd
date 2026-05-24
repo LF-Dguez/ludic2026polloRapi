@@ -130,8 +130,8 @@ func _ready() -> void:
 	# (Player ya no usa estos arrays — collision via _is_impassable_overworld_explicit
 	# y whitelist hardcoded por mode. Constants quedan acá como documentación.)
 	randomize()
-	_regenerate_overworld()
-	# Auto-tour DISABLED — solo se activa con F12 manualmente para capturar screenshots
+	await _regenerate_overworld()
+	# Auto-tour solo se activa con F12 (QA screenshots), no automático al iniciar
 
 
 func _auto_tour() -> void:
@@ -274,7 +274,7 @@ func _regenerate_overworld() -> void:
 	minimap.visible = true
 	minimap_hint.visible = true
 	_update_hud(t_gen, t_paint)
-	_save_screenshot("overworld")
+	await _save_screenshot("overworld")
 	regenerating = false
 
 
@@ -345,7 +345,7 @@ func _enter_paquime_dungeon(poi) -> void:
 	dungeon_layer.visible = true
 	cave_layer.visible = false
 	mines_layer.visible = false
-	dark_bg.visible = false
+	dark_bg.visible = true  # fondo oscuro fuera de la dungeon (era gris Godot default)
 	canvas_modulate.color = Color(0.65, 0.60, 0.55, 1)
 	player_light.enabled = true
 	player_light.color = Color(1.0, 0.85, 0.55)
@@ -370,7 +370,7 @@ func _enter_paquime_dungeon(poi) -> void:
 		entrance_tile = Vector2i(DUN_W / 2, DUN_H / 2)
 	player.set_tile_position(entrance_tile)
 	_update_hud(t_gen, t_paint)
-	_save_screenshot("dungeon_paquime")
+	await _save_screenshot("dungeon_paquime")
 
 
 func _find_first_tile_in_dungeon(target: Vector2i) -> Vector2i:
@@ -390,8 +390,10 @@ func _paint_dungeon(dun) -> void:
 		for x in range(dun.width):
 			var tile: Vector2i = dun.get_tile(x, y)
 			if tile != WALL and tile != BSPScript.T_VOID:
-				# es piso/decoración — primero pinta el sub-floor de variante crema
-				var variant: int = (x * 17 + y * 13) % 4
+				# es piso/decoración — sub-floor con hash anti-checkerboard
+				var h: int = ((x * 73856093) ^ (y * 19349663) ^ (dun.seed_value * 83492791))
+				h = (h ^ (h >> 13)) & 0x7fffffff
+				var variant: int = h % 4
 				dungeon_layer.set_cell(Vector2i(x, y), 1, Vector2i(variant, 0))
 	# Pase 2: Pinta walls + decoraciones (source 0) — sobreescribe sobre el floor donde haya wall
 	for y in range(dun.height):
@@ -437,7 +439,7 @@ func _enter_cave_dungeon(poi) -> void:
 
 	player.set_tile_position(cave.spawn)
 	_update_hud(t_gen, t_paint)
-	_save_screenshot("dungeon_cave")
+	await _save_screenshot("dungeon_cave")
 
 
 func _paint_cave(c) -> void:
@@ -446,7 +448,10 @@ func _paint_cave(c) -> void:
 	for y in range(c.height):
 		for x in range(c.width):
 			if c.walls[y * c.width + x] == 0:
-				var variant: int = (x * 17 + y * 13) % 4
+				# Hash mejorado para distribución no-cuadriculada
+				var h: int = ((x * 73856093) ^ (y * 19349663) ^ (c.seed_value * 83492791))
+				h = (h ^ (h >> 13)) & 0x7fffffff
+				var variant: int = h % 4
 				cave_layer.set_cell(Vector2i(x, y), 1, Vector2i(variant, 0))
 	# Pase 2: WALL tiles (source 0) con autotile
 	for y in range(c.height):
@@ -494,7 +499,7 @@ func _enter_mine_dungeon(poi) -> void:
 
 	player.set_tile_position(mine.spawn)
 	_update_hud(t_gen, t_paint)
-	_save_screenshot("dungeon_mine")
+	await _save_screenshot("dungeon_mine")
 
 
 func _paint_mine(m) -> void:
@@ -503,7 +508,9 @@ func _paint_mine(m) -> void:
 	for y in range(m.height):
 		for x in range(m.width):
 			if m.walls[y * m.width + x] == 0:
-				var variant: int = (x * 17 + y * 13) % 4
+				var h: int = ((x * 73856093) ^ (y * 19349663) ^ (m.seed_value * 83492791))
+				h = (h ^ (h >> 13)) & 0x7fffffff
+				var variant: int = h % 4
 				mines_layer.set_cell(Vector2i(x, y), 1, Vector2i(variant, 0))
 	# Pase 2: WALLS (source 0) autotile
 	for y in range(m.height):

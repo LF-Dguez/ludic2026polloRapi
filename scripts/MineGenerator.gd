@@ -230,10 +230,12 @@ static func count_wall_neighbors(mine: Mine, x: int, y: int) -> int:
 
 static func get_tile_for(mine: Mine, x: int, y: int) -> Vector2i:
 	var n: int = count_wall_neighbors(mine, x, y)
-	var seed_idx: int = (x * 73 + y * 19) % 8
+	var h: int = ((x * 73856093) ^ (y * 19349663) ^ (mine.seed_value * 83492791))
+	h = (h ^ (h >> 13)) & 0x7fffffff
+	var seed_idx: int = h % 8
 	match n:
 		4:
-			return FILL_VARIANTS[(x * 73 + y * 19) % FILL_VARIANTS.size()]
+			return FILL_VARIANTS[h % FILL_VARIANTS.size()]
 		3:
 			return EDGE_VARIANTS[seed_idx]
 		2:

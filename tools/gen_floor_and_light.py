@@ -17,26 +17,25 @@ TRANS = (0, 0, 0, 0)
 
 
 def base_dirt(T, base, dark, mid, seed):
-    """Piso de tierra con grava."""
+    """Piso uniforme con variación SUTIL (no ruidoso)."""
     img = Image.new("RGBA", (T, T), base)
     px = img.load()
     r = random.Random(seed)
-    # Grava
-    for _ in range(T * T // 8):
+    # Pocas variaciones tonales sutiles
+    n_dots = T * T // 40  # ANTES T*T//8 — mucha menos densidad
+    for _ in range(n_dots):
         x = r.randrange(T); y = r.randrange(T)
-        px[x, y] = dark
-    # Highlight
-    for _ in range(T * T // 16):
-        x = r.randrange(T); y = r.randrange(T)
-        px[x, y] = mid
-    # Algunas piedritas
-    for _ in range(3):
-        cx = r.randrange(4, T - 4); cy = r.randrange(4, T - 4)
-        radius = r.randrange(1, 3)
-        for dy in range(-radius, radius + 1):
-            for dx in range(-radius, radius + 1):
-                if dx * dx + dy * dy <= radius * radius:
-                    px[cx + dx, cy + dy] = dark
+        if r.random() < 0.5:
+            px[x, y] = dark
+        else:
+            px[x, y] = mid
+    # 1-2 piedritas pequeñas tono medio (no muy contrastante)
+    n_stones = 1 if r.random() < 0.5 else 2
+    for _ in range(n_stones):
+        cx = r.randrange(3, T - 3); cy = r.randrange(3, T - 3)
+        # Solo dos pixeles juntos, no disco
+        px[cx, cy] = dark
+        px[cx + 1, cy] = dark
     return img
 
 
