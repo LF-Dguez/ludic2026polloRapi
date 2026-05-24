@@ -25,6 +25,9 @@ var mode: int = 0  # Mode enum (definido en Main.gd) — 0=overworld, 1=paquime,
 # decorativos pintados en src 0 (atlas walls) bloqueen al jugador.
 var passable_decor: Dictionary = {}  # Vector2i → bool
 
+# Set de tile positions OCUPADAS POR ÁRBOLES (Sprite2D nodes) — impasable en overworld.
+var tree_blocked_tiles: Dictionary = {}  # Vector2i → bool
+
 
 func _ready() -> void:
 	var img := Image.load_from_file(ProjectSettings.globalize_path(sprite_path))
@@ -102,19 +105,21 @@ func _can_stand_at(pos: Vector2) -> bool:
 		var src_id: int = layer.get_cell_source_id(Vector2i(tx, ty))
 		var atlas: Vector2i = layer.get_cell_atlas_coords(Vector2i(tx, ty))
 		if mode == 0:
-			# Overworld: check tanto base layer como decor layer overlay
+			# Overworld: check base + decor overlay + trees (Sprite2D nodes)
 			if src_id == -1:
 				return false
 			if _is_impassable_overworld_explicit(src_id, atlas):
 				return false
-			# También check decor overlay (árboles, rocas grandes están en decor layer)
-			var decor_layer: TileMapLayer = overworld_decor_layer if overworld_decor_layer != null else null
-			if decor_layer != null:
-				var d_src: int = decor_layer.get_cell_source_id(Vector2i(tx, ty))
+			# Decor overlay (rocas grandes etc.)
+			if overworld_decor_layer != null:
+				var d_src: int = overworld_decor_layer.get_cell_source_id(Vector2i(tx, ty))
 				if d_src != -1:
-					var d_atlas: Vector2i = decor_layer.get_cell_atlas_coords(Vector2i(tx, ty))
+					var d_atlas: Vector2i = overworld_decor_layer.get_cell_atlas_coords(Vector2i(tx, ty))
 					if _is_impassable_overworld_explicit(d_src, d_atlas):
 						return false
+			# Árboles grandes (Sprite2D, tile occupado registrado en tree_blocked_tiles)
+			if tree_blocked_tiles.has(Vector2i(tx, ty)):
+				return false
 		elif mode == 1:
 			# Paquimé: src 0 = atlas paquime. WHITELIST de tiles passable;
 			# todo lo demás src 0 (incluyendo T_WALL/T_WATER/T_VOID y cualquier

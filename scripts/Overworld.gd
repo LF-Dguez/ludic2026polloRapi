@@ -23,8 +23,18 @@ enum POIType {
 	ENTRADA_PAQUIME, ENTRADA_TARAHUMARA, ENTRADA_NAICA,
 }
 
-# Tile primario {src, atlas} — usa biome_bases.png (smooth, no patterns at tiling).
-# Decoraciones (vegetación, props) van encima via decor_layer.
+# Columna del bioma en biome_bases.png (8 biomas × 4 variantes filas)
+const BIOME_BASE_COL := {
+	Biome.LLANOS: 0,
+	Biome.SIERRA: 1,
+	Biome.DESIERTO: 2,
+	Biome.BARRANCA: 3,
+	Biome.MINERO: 4,
+	Biome.RIO: 5,
+	Biome.MESA: 6,
+	Biome.PICO: 7,
+}
+# Tile primario (col fija por bioma, variant row 0-3 elegida por hash en generate())
 const BIOME_PRIMARY := {
 	Biome.LLANOS:   {"src": SRC_BASES, "atlas": Vector2i(0, 0)},
 	Biome.SIERRA:   {"src": SRC_BASES, "atlas": Vector2i(1, 0)},
@@ -195,6 +205,7 @@ class World:
 	var decor_tiles: PackedInt32Array  # OVERLAY: decoraciones con bg transparente
 	var pois: Array = []
 	var bridges: Array = []  # Array[Vector2i] — posiciones exactas de tiles puente
+	var trees: Array = []    # Array of {pos: Vector2i (tile), type: int (0-7)}
 	var seed_value: int
 
 	func get_biome(x: int, y: int) -> int:
@@ -245,6 +256,7 @@ func generate(w: int, h: int, seed_value: int) -> World:
 		world.decor_tiles[i] = 0xff << 16
 	world.pois = []
 	world.bridges = []
+	world.trees = []
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
@@ -383,17 +395,24 @@ func generate(w: int, h: int, seed_value: int) -> World:
 	for y in range(h):
 		for x in range(w):
 			var biome: int = world.get_biome(x, y)
-			var primary: Dictionary = BIOME_PRIMARY[biome]
-			# BASE siempre el primary del bioma (LLANOS verde, DESIERTO dorado, etc.)
-			world.set_tile_pair(x, y, primary["src"], primary["atlas"])
-			# DECOR opcional como OVERLAY (capa separada con fondo transparente)
+			# BASE: una de 4 variantes del biome_bases (hash anti-checkerboard)
+			var col: int = BIOME_BASE_COL.get(biome, 0)
+			var bh: int = ((x * 73856093) ^ (y * 19349663) ^ (seed_value * 83492791))
+			bh = (bh ^ (bh >> 13)) & 0x7fffffff
+			var variant: int = bh % 4
+			world.set_tile_pair(x, y, SRC_BASES, Vector2i(col, variant))
+			# DECOR opcional como OVERLAY
 			var roll: float = (n_decor.get_noise_2d(x, y) + 1.0) * 0.5
 			var prob: float = DECOR_PROBS.get(biome, 0.0)
 			if roll < prob and BIOME_DECORS.has(biome) and not BIOME_DECORS[biome].is_empty():
 				var decors: Array = BIOME_DECORS[biome]
 				var idx: int = int(roll * 10000.0) % decors.size()
 				var d: Dictionary = decors[idx]
-				world.set_decor(x, y, d["src"], d["atlas"])
+				# Trees (SRC_TREES) → Sprite2D nodes via world.trees (NO al decor layer)
+				if d["src"] == SRC_TREES:
+					world.trees.append({"pos": Vector2i(x, y), "type": d["atlas"].x})
+				else:
+					world.set_decor(x, y, d["src"], d["atlas"])
 
 	# === Pase 4: POIs + stamps ===
 	_place_pois_chihuahua(world, rng)

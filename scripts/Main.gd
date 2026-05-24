@@ -30,7 +30,7 @@ const ATLAS_AFUERA_ROWS := 10
 const ATLAS_TREES_COLS := 8
 const ATLAS_TREES_ROWS := 1
 const ATLAS_BASES_COLS := 8
-const ATLAS_BASES_ROWS := 1
+const ATLAS_BASES_ROWS := 4
 const ATLAS_PAQUIME_COLS := 4
 const ATLAS_PAQUIME_ROWS := 4
 const ATLAS_CAVE_COLS := 8
@@ -64,6 +64,7 @@ enum Mode { OVERWORLD, DUNGEON_PAQUIME, CAVE_TARAHUMARA, MINE_NAICA }
 @onready var dark_bg: ColorRect = $DarkBG
 @onready var overworld_layer: TileMapLayer = $OverworldLayer
 @onready var overworld_decor_layer: TileMapLayer = $OverworldDecorLayer
+@onready var trees_container: Node2D = $TreesContainer
 @onready var dungeon_layer: TileMapLayer = $DungeonLayer
 @onready var cave_layer: TileMapLayer = $CaveLayer
 @onready var mines_layer: TileMapLayer = $MinesLayer
@@ -94,6 +95,11 @@ var mine  # MineGenerator.Mine
 # Guard contra regeneraciones concurrentes (spam de R)
 var regenerating: bool = false
 
+# Textura del atlas de trees grandes (Sprite2D)
+var _trees_big_tex: Texture2D = null
+const TREE_SOURCE_SIZE := 32  # cada tile en trees_big.png es 32x32
+const TREE_DISPLAY_SCALE := 4.0  # source 32 × scale 4 = 128px display = 2× player
+
 var saved_overworld_tile: Vector2i = Vector2i.ZERO
 var active_dungeon_poi: Variant = null
 
@@ -120,6 +126,8 @@ func _ready() -> void:
 	)
 	# Carga la textura de luz radial para PointLight2D
 	player_light.texture = _load_texture("res://art/tiles/light_texture.png")
+	# Carga atlas de trees grandes para Sprite2D spawn
+	_trees_big_tex = _load_texture("res://art/tiles/trees_big.png")
 	# Inicializa minimap con referencia al jugador
 	minimap.player_ref = player
 	_apply_minimap_size()
@@ -255,6 +263,7 @@ func _regenerate_overworld() -> void:
 	mode = Mode.OVERWORLD
 	overworld_layer.visible = true
 	overworld_decor_layer.visible = true
+	trees_container.visible = true
 	dungeon_layer.visible = false
 	cave_layer.visible = false
 	mines_layer.visible = false
@@ -317,6 +326,8 @@ func _find_safe_spawn(origin: Vector2i) -> Vector2i:
 func _paint_overworld(w) -> void:
 	overworld_layer.clear()
 	overworld_decor_layer.clear()
+	_clear_trees()
+	_spawn_trees(w)
 	# Chunked: yield every ~60k cells. Pinta BASE en overworld_layer,
 	# DECOR (con fondo transparente) en overworld_decor_layer encima.
 	var painted: int = 0
@@ -353,6 +364,7 @@ func _enter_paquime_dungeon(poi) -> void:
 	mode = Mode.DUNGEON_PAQUIME
 	overworld_layer.visible = false
 	overworld_decor_layer.visible = false
+	trees_container.visible = false
 	dungeon_layer.visible = true
 	cave_layer.visible = false
 	mines_layer.visible = false
@@ -425,6 +437,7 @@ func _enter_cave_dungeon(poi) -> void:
 	mode = Mode.CAVE_TARAHUMARA
 	overworld_layer.visible = false
 	overworld_decor_layer.visible = false
+	trees_container.visible = false
 	dungeon_layer.visible = false
 	cave_layer.visible = true
 	mines_layer.visible = false
@@ -485,6 +498,7 @@ func _enter_mine_dungeon(poi) -> void:
 	mode = Mode.MINE_NAICA
 	overworld_layer.visible = false
 	overworld_decor_layer.visible = false
+	trees_container.visible = false
 	dungeon_layer.visible = false
 	cave_layer.visible = false
 	mines_layer.visible = true
@@ -549,6 +563,7 @@ func _exit_to_overworld() -> void:
 	mode = Mode.OVERWORLD
 	overworld_layer.visible = true
 	overworld_decor_layer.visible = true
+	trees_container.visible = true
 	dungeon_layer.visible = false
 	cave_layer.visible = false
 	mines_layer.visible = false
@@ -708,6 +723,37 @@ func _handle_interact() -> void:
 		var dy: int = t.y - ex.y
 		if dx * dx + dy * dy <= 2:
 			_exit_to_overworld()
+
+
+func _clear_trees() -> void:
+	for child in trees_container.get_children():
+		child.queue_free()
+
+
+func _spawn_trees(w) -> void:
+	# Spawnea Sprite2D per tree, scale 4 → 128px display = 2× player.
+	# Coordina con Player.tree_blocked_tiles para colisión.
+	if _trees_big_tex == null:
+		return
+	var blocked: Dictionary = {}
+	for tree in w.trees:
+		var tile_pos: Vector2i = tree["pos"]
+		var t_type: int = tree["type"]
+		var spr := Sprite2D.new()
+		var atlas_tex := AtlasTexture.new()
+		atlas_tex.atlas = _trees_big_tex
+		atlas_tex.region = Rect2(t_type * TREE_SOURCE_SIZE, 0, TREE_SOURCE_SIZE, TREE_SOURCE_SIZE)
+		spr.texture = atlas_tex
+		spr.centered = true
+		spr.scale = Vector2(TREE_DISPLAY_SCALE, TREE_DISPLAY_SCALE)
+		# Posición en world: centro del tile (tile.x*32+16, tile.y*32+16)
+		spr.position = Vector2(tile_pos.x * TILE_DISPLAY + TILE_DISPLAY / 2.0,
+			tile_pos.y * TILE_DISPLAY + TILE_DISPLAY / 2.0)
+		# Y-sort por z básico: árboles más al sur encima
+		spr.z_index = tile_pos.y
+		trees_container.add_child(spr)
+		blocked[tile_pos] = true
+	player.tree_blocked_tiles = blocked
 
 
 func _clamp_zoom() -> void:
