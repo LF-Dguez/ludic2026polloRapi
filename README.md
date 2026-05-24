@@ -61,11 +61,11 @@ jueguito/
 │   ├── player.png              # Sprite jugador (64x64 top-down)
 │   └── light_texture.png       # Textura radial para PointLight2D
 └── tools/                      # Scripts Python (PIL) para generar tiles
-    ├── gen_overworld_tiles.py
-    ├── gen_player.py
-    ├── gen_floor_and_light.py
-    ├── process_user_tilesets.py
-    └── ...
+	├── gen_overworld_tiles.py
+	├── gen_player.py
+	├── gen_floor_and_light.py
+	├── process_user_tilesets.py
+	└── ...
 ```
 
 ## Sistemas implementados

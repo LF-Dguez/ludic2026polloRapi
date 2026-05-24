@@ -19,16 +19,16 @@ WORLD (procgen, semilla global)
 ├── BIOMA: Sierra Tarahumara           → entradas cuevas (Tarahumara)
 ├── BIOMA: Barrancas del Cobre         → puentes colgantes, descenso
 └── BIOMA: Distrito minero (Parral)    → entradas Naica
-        │
-        ├── POI handcrafted: Mata Ortiz (refugio + vendedor)
-        ├── POI handcrafted: Misión San Francisco Javier de Satevó
-        ├── POI handcrafted: Hidalgo del Parral (mina histórica)
-        └── POIs procgen: entradas de mazmorra (≥ 1 por bioma)
-                │
-                └── DUNGEON (procgen on-demand, seed derivado)
-                        ├── Tipo Paquimé: BSP + puertas T + plaza + cancha + efigies
-                        ├── Tipo Tarahumara: cellular automata + petroglifos + fogatas
-                        └── Tipo Naica: CA denso + cristales + fumarolas (heat damage)
+		│
+		├── POI handcrafted: Mata Ortiz (refugio + vendedor)
+		├── POI handcrafted: Misión San Francisco Javier de Satevó
+		├── POI handcrafted: Hidalgo del Parral (mina histórica)
+		└── POIs procgen: entradas de mazmorra (≥ 1 por bioma)
+				│
+				└── DUNGEON (procgen on-demand, seed derivado)
+						├── Tipo Paquimé: BSP + puertas T + plaza + cancha + efigies
+						├── Tipo Tarahumara: cellular automata + petroglifos + fogatas
+						└── Tipo Naica: CA denso + cristales + fumarolas (heat damage)
 ```
 
 ## Algoritmos elegidos (con razón)

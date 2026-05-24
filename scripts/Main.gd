@@ -14,6 +14,8 @@ const EnemySpawnerScript := preload("res://scripts/EnemySpawner.gd")
 const SaveManagerScript := preload("res://scripts/SaveManager.gd")
 const BossScript := preload("res://scripts/Boss.gd")
 
+var music_player: AudioStreamPlayer = null
+
 const TILE_SOURCE := 16
 const TILE_DISPLAY := 32
 const MAP_W := 1024
@@ -142,6 +144,10 @@ var _fog: CanvasLayer = null
 var _title_choice: String = "new"
 var _title_done: bool = false
 
+# Music of the world
+var _music_dungeon: AudioStream = preload("res://audio/music/dungeonmusic.mp3")
+var _music_overworld: AudioStream = preload("res://audio/music/exteriormusic.mp3")
+
 # ─── Random overworld enemy spawning ─────────────────────────────────
 const OVERWORLD_ENEMY_CAP := 14
 const OVERWORLD_SPAWN_MIN_DIST := 220.0  # no spawn pegado al player
@@ -172,6 +178,10 @@ func _weapon_label_update(wid: String) -> void:
 
 
 func _ready() -> void:
+	music_player = AudioStreamPlayer.new()
+	music_player.name = "MusicPlayer"
+	add_child(music_player)
+	
 	overworld_layer.tile_set = _build_overworld_tileset()
 	# Decor layer comparte el mismo TileSet (3 sources)
 	overworld_decor_layer.tile_set = overworld_layer.tile_set
@@ -584,6 +594,7 @@ func _regenerate_overworld() -> void:
 	minimap.visible = true
 	minimap_hint.visible = true
 	_update_hud(t_gen, t_paint)
+	_play_music(_music_overworld)
 	await _save_screenshot("overworld")
 	regenerating = false
 
@@ -647,6 +658,12 @@ func _find_first_poi(type: int) -> Vector2i:
 			return poi.pos
 	return Vector2i(-1, -1)
 
+func _play_music(stream: AudioStream, volume_db: float = -6.0) -> void:
+	if music_player.stream == stream and music_player.playing:
+		return  # ya está sonando, no reiniciar
+	music_player.stream = stream
+	music_player.volume_db = volume_db
+	music_player.play()
 
 # ============ PAQUIMÉ ============
 
@@ -693,6 +710,7 @@ func _enter_paquime_dungeon(poi) -> void:
 	if exit_tile != Vector2i(-1, -1):
 		_spawn_boss("senor_paquime", exit_tile, dungeon_layer, 1)
 	_update_hud(t_gen, t_paint)
+	_play_music(_music_dungeon)
 	await _save_screenshot("dungeon_paquime")
 
 
@@ -770,6 +788,7 @@ func _enter_cave_dungeon(poi) -> void:
 	_spawn_enemies_cave(cave)
 	_spawn_boss("bestia_cobre", cave.exit_pos, cave_layer, 2)
 	_update_hud(t_gen, t_paint)
+	_play_music(_music_dungeon)
 	await _save_screenshot("dungeon_cave")
 
 
@@ -838,6 +857,7 @@ func _enter_mine_dungeon(poi) -> void:
 	_spawn_enemies_mine(mine)
 	_spawn_boss("espectro_cristal", mine.exit_pos, mines_layer, 3)
 	_update_hud(t_gen, t_paint)
+	_play_music(_music_dungeon)
 	await _save_screenshot("dungeon_mine")
 
 
@@ -908,6 +928,7 @@ func _exit_to_overworld() -> void:
 	target = _find_safe_spawn(target)
 	player.set_tile_position(target)
 	_update_hud(0, 0)
+	_play_music(_music_overworld)
 
 
 # ============ HUD / INPUT ============

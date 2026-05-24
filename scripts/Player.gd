@@ -20,6 +20,8 @@ const ANIM_ARRIBA    := "arriba"
 const ANIM_IZQUIERDA := "izquierda"
 const ANIM_DERECHA   := "derecha"
 
+var _sfx_hit: AudioStreamPlayer = null
+
 signal hp_changed(new_hp: int, max_hp: int)
 signal player_died
 signal weapon_changed(weapon_id: String)
@@ -118,6 +120,12 @@ func _ready() -> void:
 	sprite.frame = 0
 	current_hp = MAX_HP
 	hp_changed.emit(current_hp, MAX_HP)
+	
+	# SFX de golpe
+	_sfx_hit = AudioStreamPlayer.new()
+	_sfx_hit.stream = load("res://audio/music/hitsound.mp3")
+	_sfx_hit.volume_db = 0.0
+	add_child(_sfx_hit)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -435,6 +443,8 @@ func _machetazo() -> void:
 			dmg = int(base_dmg * 1.75)
 		if e.has_method("take_damage"):
 			e.take_damage(dmg)
+			if _sfx_hit != null:
+				_sfx_hit.play()
 		else:
 			e.queue_free()
 	_spawn_slash_vfx(attack_dir)
