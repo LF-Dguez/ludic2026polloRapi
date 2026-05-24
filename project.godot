@@ -1,0 +1,21 @@
+; Norte Profundo — Godot 4 project
+
+config_version=5
+
+[application]
+
+config/name="Norte Profundo"
+config/description="Generador procedural de mundo abierto + mazmorras inspirado en Chihuahua."
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.4", "Forward Plus")
+config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="viewport"
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0

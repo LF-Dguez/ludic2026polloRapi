@@ -1,0 +1,44 @@
+# Godot 4 — cache de imports y build
+.godot/
+.import/
+android/build/
+build/
+exports/
+export.cfg
+export_credentials.cfg
+*.translation
+
+# Screenshots auto-generados (se regeneran corriendo el juego)
+screenshots/
+
+# Archivos fuente grandes (sustituidos por los procesados en art/tiles/*_clean.png)
+# Comentar si quieres versionar los originales del usuario:
+PRINTS DE LA DE CUEVA.png
+PRINTS DEL DESIERTO.png
+PRINTS DE LAS MINAS.png
+
+# Memoria personal y settings de Claude Code
+.claude/
+
+# Duplicados procesados del usuario (los _clean.png son los que el juego usa)
+art/tiles/cave_source.png
+art/tiles/desert_source.png
+art/tiles/mines_source.png
+
+# Sistema operativo
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python (tools/)
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
